@@ -1,0 +1,267 @@
+{
+  "hard50_path": "browsecomp_plus_hard50.jsonl",
+  "dataset_path": "browsecomp_plus_dataset",
+  "corpus_path": "browsecomp-plus-corpus",
+  "output_dir": "browsecomp_plus_corpus_teaching_10k",
+  "target_size": 10000,
+  "effective_target_size": 10000,
+  "seed": 42,
+  "selected_query_count": 50,
+  "required_doc_count": 5254,
+  "random_doc_count": 4746,
+  "num_total_docs": 10000,
+  "num_shards": 5,
+  "missing_query_ids": [],
+  "per_query_stats": {
+    "785": {
+      "gold_docs": 2,
+      "evidence_docs": 4,
+      "negative_docs": 57
+    },
+    "815": {
+      "gold_docs": 4,
+      "evidence_docs": 9,
+      "negative_docs": 74
+    },
+    "827": {
+      "gold_docs": 1,
+      "evidence_docs": 6,
+      "negative_docs": 87
+    },
+    "869": {
+      "gold_docs": 4,
+      "evidence_docs": 8,
+      "negative_docs": 63
+    },
+    "216": {
+      "gold_docs": 7,
+      "evidence_docs": 9,
+      "negative_docs": 37
+    },
+    "241": {
+      "gold_docs": 6,
+      "evidence_docs": 6,
+      "negative_docs": 74
+    },
+    "1061": {
+      "gold_docs": 3,
+      "evidence_docs": 5,
+      "negative_docs": 84
+    },
+    "1072": {
+      "gold_docs": 1,
+      "evidence_docs": 8,
+      "negative_docs": 85
+    },
+    "5": {
+      "gold_docs": 2,
+      "evidence_docs": 4,
+      "negative_docs": 78
+    },
+    "26": {
+      "gold_docs": 2,
+      "evidence_docs": 5,
+      "negative_docs": 94
+    },
+    "33": {
+      "gold_docs": 2,
+      "evidence_docs": 8,
+      "negative_docs": 179
+    },
+    "36": {
+      "gold_docs": 1,
+      "evidence_docs": 10,
+      "negative_docs": 197
+    },
+    "471": {
+      "gold_docs": 1,
+      "evidence_docs": 5,
+      "negative_docs": 34
+    },
+    "487": {
+      "gold_docs": 5,
+      "evidence_docs": 11,
+      "negative_docs": 146
+    },
+    "549": {
+      "gold_docs": 2,
+      "evidence_docs": 2,
+      "negative_docs": 66
+    },
+    "556": {
+      "gold_docs": 1,
+      "evidence_docs": 3,
+      "negative_docs": 73
+    },
+    "263": {
+      "gold_docs": 2,
+      "evidence_docs": 7,
+      "negative_docs": 162
+    },
+    "297": {
+      "gold_docs": 2,
+      "evidence_docs": 8,
+      "negative_docs": 172
+    },
+    "314": {
+      "gold_docs": 3,
+      "evidence_docs": 3,
+      "negative_docs": 38
+    },
+    "342": {
+      "gold_docs": 1,
+      "evidence_docs": 11,
+      "negative_docs": 138
+    },
+    "53": {
+      "gold_docs": 3,
+      "evidence_docs": 6,
+      "negative_docs": 67
+    },
+    "635": {
+      "gold_docs": 1,
+      "evidence_docs": 4,
+      "negative_docs": 43
+    },
+    "651": {
+      "gold_docs": 5,
+      "evidence_docs": 5,
+      "negative_docs": 68
+    },
+    "662": {
+      "gold_docs": 1,
+      "evidence_docs": 8,
+      "negative_docs": 190
+    },
+    "930": {
+      "gold_docs": 1,
+      "evidence_docs": 5,
+      "negative_docs": 68
+    },
+    "944": {
+      "gold_docs": 1,
+      "evidence_docs": 7,
+      "negative_docs": 111
+    },
+    "978": {
+      "gold_docs": 1,
+      "evidence_docs": 7,
+      "negative_docs": 132
+    },
+    "684": {
+      "gold_docs": 2,
+      "evidence_docs": 10,
+      "negative_docs": 108
+    },
+    "709": {
+      "gold_docs": 1,
+      "evidence_docs": 9,
+      "negative_docs": 104
+    },
+    "730": {
+      "gold_docs": 1,
+      "evidence_docs": 6,
+      "negative_docs": 167
+    },
+    "747": {
+      "gold_docs": 1,
+      "evidence_docs": 7,
+      "negative_docs": 194
+    },
+    "761": {
+      "gold_docs": 1,
+      "evidence_docs": 2,
+      "negative_docs": 10
+    },
+    "180": {
+      "gold_docs": 2,
+      "evidence_docs": 10,
+      "negative_docs": 121
+    },
+    "1082": {
+      "gold_docs": 3,
+      "evidence_docs": 5,
+      "negative_docs": 70
+    },
+    "1095": {
+      "gold_docs": 8,
+      "evidence_docs": 9,
+      "negative_docs": 110
+    },
+    "79": {
+      "gold_docs": 1,
+      "evidence_docs": 4,
+      "negative_docs": 73
+    },
+    "85": {
+      "gold_docs": 1,
+      "evidence_docs": 10,
+      "negative_docs": 155
+    },
+    "86": {
+      "gold_docs": 1,
+      "evidence_docs": 5,
+      "negative_docs": 57
+    },
+    "113": {
+      "gold_docs": 1,
+      "evidence_docs": 2,
+      "negative_docs": 76
+    },
+    "371": {
+      "gold_docs": 3,
+      "evidence_docs": 7,
+      "negative_docs": 124
+    },
+    "380": {
+      "gold_docs": 1,
+      "evidence_docs": 9,
+      "negative_docs": 96
+    },
+    "395": {
+      "gold_docs": 2,
+      "evidence_docs": 9,
+      "negative_docs": 74
+    },
+    "397": {
+      "gold_docs": 1,
+      "evidence_docs": 6,
+      "negative_docs": 114
+    },
+    "427": {
+      "gold_docs": 5,
+      "evidence_docs": 5,
+      "negative_docs": 39
+    },
+    "432": {
+      "gold_docs": 3,
+      "evidence_docs": 11,
+      "negative_docs": 160
+    },
+    "442": {
+      "gold_docs": 1,
+      "evidence_docs": 6,
+      "negative_docs": 93
+    },
+    "450": {
+      "gold_docs": 4,
+      "evidence_docs": 9,
+      "negative_docs": 155
+    },
+    "153": {
+      "gold_docs": 1,
+      "evidence_docs": 3,
+      "negative_docs": 69
+    },
+    "159": {
+      "gold_docs": 1,
+      "evidence_docs": 4,
+      "negative_docs": 134
+    },
+    "166": {
+      "gold_docs": 3,
+      "evidence_docs": 4,
+      "negative_docs": 29
+    }
+  }
+}
