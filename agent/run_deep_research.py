@@ -22,6 +22,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-rounds", type=int, default=6, help="Maximum ReAct rounds after initial searches.")
     parser.add_argument("--max-initial-queries", type=int, default=7, help="Initial planned searches per question.")
     parser.add_argument("--top-k", type=int, default=8, help="BM25 results per search.")
+    parser.add_argument("--auto-open-top-docs", type=int, default=10, help="Open top documents after initial search.")
     parser.add_argument("--max-context-chars", type=int, default=24000, help="Compressed evidence context budget.")
     parser.add_argument("--verification-rounds", type=int, default=2, help="Answer verification and refinement rounds.")
     parser.add_argument("--temperature", type=float, default=0.0, help="Agent model temperature.")
@@ -48,6 +49,7 @@ def build_config(args: argparse.Namespace) -> ResearchConfig:
         max_rounds=args.max_rounds,
         max_initial_queries=args.max_initial_queries,
         search_top_k=args.top_k,
+        auto_open_top_docs=args.auto_open_top_docs,
         max_context_chars=args.max_context_chars,
         verification_rounds=args.verification_rounds,
         temperature=args.temperature,

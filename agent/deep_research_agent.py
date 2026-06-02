@@ -46,6 +46,7 @@ Do not include a guessed final answer."""
 ANSWER_SYSTEM_PROMPT = """You are the answer synthesis agent.
 Use only the supplied research state and evidence. Prefer exact titles, names, dates, and quantities copied from evidence.
 If evidence is incomplete, still provide the best-supported candidate and lower the confidence instead of refusing by default.
+The Exact Answer line must contain only the answer string, not a sentence, hedge, explanation, or citation.
 Return exactly:
 Explanation: <brief evidence-based explanation>
 Exact Answer: <short final answer only>
@@ -158,13 +159,34 @@ def _parse_tool_arguments(arguments: Any) -> Dict[str, Any]:
     return {}
 
 
+def _clean_answer_string(answer: str) -> str:
+    cleaned = _strip_thinking(str(answer)).strip().strip('"').strip()
+    cleaned = re.sub(r"^\s*(?:Exact Answer|Final Answer|Answer)\s*:\s*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+
+    lowered = cleaned.lower()
+    prefix_patterns = [
+        r"^the (?:answer|name|club|company|person|title|date|number|language|location|university|species) is\s+",
+        r"^the .*? is\s+",
+        r"^it is\s+",
+        r"^this is\s+",
+    ]
+    for pattern in prefix_patterns:
+        match = re.match(pattern, lowered, flags=re.IGNORECASE)
+        if match and len(cleaned) - match.end() >= 2:
+            cleaned = cleaned[match.end() :].strip()
+            break
+
+    return cleaned.strip(" .")
+
+
 def _extract_exact_answer(text: str) -> str:
     cleaned = _strip_thinking(text)
     json_value = _extract_json_value(cleaned)
     if isinstance(json_value, dict):
         for key in ("exact_answer", "final_answer", "answer"):
             if json_value.get(key):
-                return str(json_value[key]).strip()
+                return _clean_answer_string(str(json_value[key]))
 
     for label in ("Exact Answer", "Final Answer", "Answer"):
         match = re.search(
@@ -173,14 +195,14 @@ def _extract_exact_answer(text: str) -> str:
             flags=re.IGNORECASE | re.DOTALL,
         )
         if match:
-            return match.group(1).strip().strip('"')
+            return _clean_answer_string(match.group(1))
 
     lines = [line.strip() for line in cleaned.splitlines() if line.strip()]
     if not lines:
         return ""
     if lines[-1].lower().startswith("confidence:") and len(lines) >= 2:
-        return lines[-2].strip().strip('"')
-    return lines[-1].strip().strip('"')
+        return _clean_answer_string(lines[-2])
+    return _clean_answer_string(lines[-1])
 
 
 def _ensure_final_format(candidate: str, fallback_confidence: int = 45) -> str:
@@ -210,6 +232,7 @@ class ResearchConfig:
     max_rounds: int = 6
     max_initial_queries: int = 7
     search_top_k: int = 8
+    auto_open_top_docs: int = 10
     max_tool_calls_per_round: int = 4
     max_total_tool_calls: int = 36
     max_no_new_info_rounds: int = 2
@@ -643,6 +666,17 @@ class DeepResearchAgent:
                 arguments={"query": query, "top_k": self.config.search_top_k},
                 result=result,
                 content="Executing planned search.",
+            )
+
+        for docid in state.top_docids(limit=self.config.auto_open_top_docs):
+            result = self.tool_registry["open_doc"](docid=docid, max_chars=self.config.doc_max_chars)
+            self._record_manual_tool_call(
+                messages=messages,
+                state=state,
+                tool_name="open_doc",
+                arguments={"docid": docid, "max_chars": self.config.doc_max_chars},
+                result=result,
+                content="Opening a high-ranked document for evidence.",
             )
         state.no_new_info_rounds = 0
 
