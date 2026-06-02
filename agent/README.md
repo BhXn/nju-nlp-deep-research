@@ -129,3 +129,45 @@ vllm serve ./Qwen3-8B \
   --host 0.0.0.0 \
   --port 8000
 ```
+
+## 本仓库补充的 Deep Research Agent
+
+新增文件：
+
+- `agent/deep_research_agent.py`
+  - 多 agent 架构：Planner、Search Executor、Answer Synthesizer、Verifier
+  - 多轮检索 loop、停止条件、上下文压缩、证据验证
+- `agent/run_deep_research.py`
+  - 批量生成符合提交格式的 `submission.jsonl`
+- `open_track/`
+  - 成功轨迹转 SFT 数据与本地模型微调脚本
+
+服务器运行示例：
+
+```bash
+python -m agent.run_deep_research \
+  --dataset browsecomp_plus_hard50.jsonl \
+  --index-path indexes/browsecomp_plus_bm25.sqlite \
+  --model qwen_auto \
+  --base-url http://127.0.0.1:8000/v1 \
+  --output runs/deep_research_submission.jsonl
+```
+
+评估：
+
+```bash
+python -m agent.eval \
+  --submission runs/deep_research_submission.jsonl \
+  --dataset browsecomp_plus_hard50.jsonl \
+  --model qwen_auto \
+  --base-url http://127.0.0.1:8000/v1 \
+  --output runs/deep_research_eval.jsonl
+```
+
+可调参数：
+
+- `--max-rounds`：初始检索后的 ReAct 轮数
+- `--max-initial-queries`：规划阶段生成并执行的初始检索数
+- `--top-k`：每次 BM25 检索返回文档数
+- `--enable-thinking`：允许 Qwen thinking 输出；默认关闭以提高工具调用格式稳定性
+- `--no-model-planner` / `--no-model-verifier`：关闭规划或验证 LLM 子 agent，用确定性 fallback

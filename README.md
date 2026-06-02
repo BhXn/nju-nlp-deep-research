@@ -298,3 +298,29 @@ python -m agent.eval \
 这次实验的目标不是让模型搜一次就猜答案，而是让它在固定检索环境中，逐步推进、保留证据、最后输出一个可以检查的答案。
 
 tip：使用 `agent/eval.py` 可以自动评估你的 agent 效果，无需手动比对答案。
+
+## 11. Deep Research 实现入口
+
+本版本已补充可直接在服务器运行的多轮 agent：
+
+```bash
+python -m agent.run_deep_research \
+  --dataset browsecomp_plus_hard50.jsonl \
+  --index-path indexes/browsecomp_plus_bm25.sqlite \
+  --model qwen_auto \
+  --base-url http://127.0.0.1:8000/v1 \
+  --output runs/deep_research_submission.jsonl
+```
+
+对应评估命令：
+
+```bash
+python -m agent.eval \
+  --submission runs/deep_research_submission.jsonl \
+  --dataset browsecomp_plus_hard50.jsonl \
+  --model qwen_auto \
+  --base-url http://127.0.0.1:8000/v1 \
+  --output runs/deep_research_eval.jsonl
+```
+
+Open Track 相关工具与训练脚本在 `open_track/` 下；训练脚本只接受服务器本地已有模型路径，不会下载模型。
