@@ -232,7 +232,7 @@ class ResearchConfig:
     max_rounds: int = 6
     max_initial_queries: int = 7
     search_top_k: int = 8
-    auto_open_top_docs: int = 10
+    auto_open_top_docs: int = 0
     max_tool_calls_per_round: int = 4
     max_total_tool_calls: int = 36
     max_no_new_info_rounds: int = 2
@@ -668,16 +668,17 @@ class DeepResearchAgent:
                 content="Executing planned search.",
             )
 
-        for docid in state.top_docids(limit=self.config.auto_open_top_docs):
-            result = self.tool_registry["open_doc"](docid=docid, max_chars=self.config.doc_max_chars)
-            self._record_manual_tool_call(
-                messages=messages,
-                state=state,
-                tool_name="open_doc",
-                arguments={"docid": docid, "max_chars": self.config.doc_max_chars},
-                result=result,
-                content="Opening a high-ranked document for evidence.",
-            )
+        if self.config.auto_open_top_docs > 0:
+            for docid in state.top_docids(limit=self.config.auto_open_top_docs):
+                result = self.tool_registry["open_doc"](docid=docid, max_chars=self.config.doc_max_chars)
+                self._record_manual_tool_call(
+                    messages=messages,
+                    state=state,
+                    tool_name="open_doc",
+                    arguments={"docid": docid, "max_chars": self.config.doc_max_chars},
+                    result=result,
+                    content="Opening a high-ranked document for evidence.",
+                )
         state.no_new_info_rounds = 0
 
     def _run_react_round(

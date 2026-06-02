@@ -1,5 +1,4 @@
 import argparse
-import re
 import sqlite3
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
@@ -134,54 +133,6 @@ def build_sqlite_bm25_index(
 
 
 class BrowseCompBM25Searcher:
-    STOPWORDS = {
-        "about",
-        "after",
-        "also",
-        "among",
-        "answer",
-        "another",
-        "because",
-        "before",
-        "being",
-        "between",
-        "certain",
-        "could",
-        "during",
-        "first",
-        "found",
-        "from",
-        "given",
-        "have",
-        "into",
-        "last",
-        "later",
-        "more",
-        "name",
-        "noted",
-        "other",
-        "particular",
-        "published",
-        "question",
-        "same",
-        "some",
-        "that",
-        "their",
-        "there",
-        "these",
-        "this",
-        "those",
-        "through",
-        "what",
-        "when",
-        "where",
-        "which",
-        "while",
-        "with",
-        "would",
-        "year",
-    }
-
     @classmethod
     def parse_args(cls, parser: argparse.ArgumentParser) -> None:
         parser.add_argument("--index-path", required=True, help="Path to the local SQLite BM25 index.")
@@ -201,11 +152,11 @@ class BrowseCompBM25Searcher:
         return "bm25_sqlite_fts5"
 
     @staticmethod
-    def _tokens_from_text(text: str) -> List[str]:
-        pieces: List[str] = []
+    def _tokenize_for_match(query: str) -> str:
+        pieces = []
         seen = set()
-        current: List[str] = []
-        for ch in text.lower():
+        current = []
+        for ch in query.lower():
             if ch.isalnum() or ch == "_":
                 current.append(ch)
             elif current:
@@ -218,63 +169,13 @@ class BrowseCompBM25Searcher:
             token = "".join(current)
             if token not in seen:
                 pieces.append(token)
-        return pieces
+        return " OR ".join(pieces)
 
-    @classmethod
-    def _distinctive_tokens(cls, query: str, max_terms: int = 16) -> List[str]:
-        tokens = []
-        seen = set()
-        for token in cls._tokens_from_text(query):
-            if len(token) < 3 or token in cls.STOPWORDS:
-                continue
-            if token not in seen:
-                seen.add(token)
-                tokens.append(token)
-        tokens.sort(key=lambda item: (0 if any(ch.isdigit() for ch in item) else 1, -len(item)))
-        return tokens[:max_terms]
+    def search(self, query: str, k: int = 10) -> List[Dict[str, Any]]:
+        match_query = self._tokenize_for_match(query)
+        if not match_query:
+            return []
 
-    @classmethod
-    def _phrase_matches(cls, query: str, max_phrases: int = 4) -> List[str]:
-        phrases: List[str] = []
-        for match in re.finditer(r"[\"“”]([^\"“”]{4,80})[\"“”]", query):
-            tokens = cls._tokens_from_text(match.group(1))
-            if 1 < len(tokens) <= 8:
-                phrases.append('"{}"'.format(" ".join(tokens)))
-            if len(phrases) >= max_phrases:
-                break
-        return phrases
-
-    @classmethod
-    def _build_match_queries(cls, query: str) -> List[str]:
-        phrases = cls._phrase_matches(query)
-        distinctive = cls._distinctive_tokens(query, max_terms=18)
-        all_tokens = cls._tokens_from_text(query)
-
-        candidates: List[str] = []
-        if phrases:
-            candidates.append(" OR ".join(phrases))
-        if len(distinctive) >= 4:
-            candidates.append(" AND ".join(distinctive[: min(6, len(distinctive))]))
-        if len(distinctive) >= 2:
-            candidates.append(" OR ".join(distinctive[: min(14, len(distinctive))]))
-        if all_tokens:
-            candidates.append(" OR ".join(all_tokens[:32]))
-
-        deduped: List[str] = []
-        seen = set()
-        for candidate in candidates:
-            key = candidate.lower()
-            if candidate and key not in seen:
-                seen.add(key)
-                deduped.append(candidate)
-        return deduped
-
-    @staticmethod
-    def _tokenize_for_match(query: str) -> str:
-        match_queries = BrowseCompBM25Searcher._build_match_queries(query)
-        return match_queries[0] if match_queries else ""
-
-    def _search_match_query(self, match_query: str, k: int) -> List[Dict[str, Any]]:
         rows = self.connection.execute(
             """
             SELECT
@@ -300,34 +201,6 @@ class BrowseCompBM25Searcher:
             }
             for row in rows
         ]
-
-    def search(self, query: str, k: int = 10) -> List[Dict[str, Any]]:
-        match_queries = self._build_match_queries(query)
-        if not match_queries:
-            return []
-
-        merged: Dict[str, Dict[str, Any]] = {}
-        for query_rank, match_query in enumerate(match_queries):
-            try:
-                results = self._search_match_query(match_query=match_query, k=max(k, 10))
-            except sqlite3.OperationalError:
-                continue
-            for rank, item in enumerate(results):
-                docid = item["docid"]
-                rank_bonus = 1.0 / (1 + query_rank + rank)
-                weighted_score = float(item["score"]) + rank_bonus
-                existing = merged.get(docid)
-                if existing is None or weighted_score > existing["_weighted_score"]:
-                    enriched = dict(item)
-                    enriched["_weighted_score"] = weighted_score
-                    merged[docid] = enriched
-            if len(merged) >= max(k * 3, 20):
-                break
-
-        ranked = sorted(merged.values(), key=lambda item: item["_weighted_score"], reverse=True)
-        for item in ranked:
-            item.pop("_weighted_score", None)
-        return ranked[: int(k)]
 
     def get_document(self, docid: str) -> Optional[Dict[str, Any]]:
         row = self.connection.execute(

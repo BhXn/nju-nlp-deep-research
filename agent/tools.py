@@ -68,8 +68,6 @@ def _tokenize_text(text: str) -> List[str]:
         "into",
         "last",
         "name",
-        "provided",
-        "published",
         "question",
         "same",
         "that",
@@ -139,17 +137,10 @@ def decompose_question_heuristic(question: str, max_subquestions: int = 8) -> Di
         search_queries.append(question.strip())
     search_queries.extend(distinctive_terms[: max_subquestions])
 
-    for start in range(0, min(len(distinctive_terms), max_subquestions + 3), 3):
-        combo = distinctive_terms[start : start + 3]
-        if len(combo) >= 2:
-            search_queries.append(" ".join(combo))
-
     for piece in subquestions:
         terms = _extract_distinctive_terms(piece, limit=4)
         if terms:
             search_queries.append(" ".join(terms))
-            if len(terms) >= 3:
-                search_queries.append(" ".join(terms[:3]))
         else:
             search_queries.append(piece)
 
