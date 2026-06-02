@@ -24,6 +24,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--top-k", type=int, default=8, help="BM25 results per search.")
     parser.add_argument("--auto-open-top-docs", type=int, default=0, help="Open top documents after initial search.")
     parser.add_argument("--max-context-chars", type=int, default=24000, help="Compressed evidence context budget.")
+    parser.add_argument("--snippet-max-chars", type=int, default=1000, help="Snippet character budget per search result.")
+    parser.add_argument("--doc-max-chars", type=int, default=6000, help="Opened document character budget.")
+    parser.add_argument("--max-evidence-docs", type=int, default=32, help="Maximum evidence documents in LLM context.")
+    parser.add_argument("--planner-max-tokens", type=int, default=1024, help="Max tokens for planner calls.")
+    parser.add_argument("--tool-max-tokens", type=int, default=1024, help="Max tokens for ReAct/tool-choice calls.")
+    parser.add_argument("--answer-max-tokens", type=int, default=2048, help="Max tokens for answer synthesis calls.")
+    parser.add_argument("--verifier-max-tokens", type=int, default=1024, help="Max tokens for verifier calls.")
     parser.add_argument("--verification-rounds", type=int, default=2, help="Answer verification and refinement rounds.")
     parser.add_argument("--temperature", type=float, default=0.0, help="Agent model temperature.")
     parser.add_argument(
@@ -51,6 +58,13 @@ def build_config(args: argparse.Namespace) -> ResearchConfig:
         search_top_k=args.top_k,
         auto_open_top_docs=args.auto_open_top_docs,
         max_context_chars=args.max_context_chars,
+        snippet_max_chars=args.snippet_max_chars,
+        doc_max_chars=args.doc_max_chars,
+        max_evidence_docs=args.max_evidence_docs,
+        planner_max_tokens=args.planner_max_tokens,
+        tool_max_tokens=args.tool_max_tokens,
+        answer_max_tokens=args.answer_max_tokens,
+        verifier_max_tokens=args.verifier_max_tokens,
         verification_rounds=args.verification_rounds,
         temperature=args.temperature,
         disable_thinking=not args.enable_thinking,

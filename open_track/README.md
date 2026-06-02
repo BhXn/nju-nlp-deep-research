@@ -41,6 +41,12 @@ python open_track/build_sft_data.py \
   --output open_track/data/sft_success.jsonl
 ```
 
+Install the optional Open Track dependencies on the server:
+
+```bash
+pip install -r open_track/requirements.txt
+```
+
 Run training with a model that already exists on the server:
 
 ```bash
@@ -53,6 +59,67 @@ python open_track/train.py \
 ```
 
 Do not train on public-test or private-test data. Keep large generated training data and checkpoints on the cloud server if they are too large to submit.
+
+Serve the LoRA adapter with vLLM:
+
+```bash
+vllm serve ./Qwen3-8B \
+  --served-model-name qwen_base \
+  --enable-auto-tool-choice \
+  --tool-call-parser hermes \
+  --trust-remote-code \
+  --enable-lora \
+  --lora-modules deepresearch=open_track/checkpoints/qwen3-deepresearch-lora \
+  --enforce-eager \
+  --max-model-len 16384 \
+  --host 0.0.0.0 \
+  --port 8000
+```
+
+When the runtime LoRA server starts successfully, evaluate with the LoRA module name `deepresearch`.
+
+If the Ascend/vLLM runtime LoRA path fails during model profiling or Torch Dynamo compilation, merge the adapter into the base model and serve the merged checkpoint as a normal model. The merged server also uses the served name `deepresearch`.
+
+```bash
+python open_track/merge_lora.py \
+  --base-model-path ./Qwen3-8B \
+  --adapter-path open_track/checkpoints/qwen3-deepresearch-lora \
+  --output-dir open_track/checkpoints/qwen3-deepresearch-merged \
+  --dtype bfloat16
+
+vllm serve open_track/checkpoints/qwen3-deepresearch-merged \
+  --served-model-name deepresearch \
+  --enable-auto-tool-choice \
+  --tool-call-parser hermes \
+  --trust-remote-code \
+  --max-model-len 16384 \
+  --host 0.0.0.0 \
+  --port 8000
+```
+
+Evaluate whichever LoRA deployment starts successfully:
+
+```bash
+python -m agent.run_deep_research \
+  --dataset browsecomp_plus_hard50.jsonl \
+  --index-path indexes/browsecomp_plus_bm25.sqlite \
+  --model deepresearch \
+  --base-url http://127.0.0.1:8000/v1 \
+  --max-context-chars 18000 \
+  --max-evidence-docs 20 \
+  --planner-max-tokens 512 \
+  --tool-max-tokens 512 \
+  --answer-max-tokens 768 \
+  --verifier-max-tokens 512 \
+  --output runs/deep_research_submission_lora.jsonl
+
+python -m agent.eval \
+  --submission runs/deep_research_submission_lora.jsonl \
+  --dataset browsecomp_plus_hard50.jsonl \
+  --model deepresearch \
+  --base-url http://127.0.0.1:8000/v1 \
+  --output runs/deep_research_eval_lora.jsonl
+```
 
 ## Ablation records for the report
 
