@@ -173,5 +173,7 @@ python -m agent.eval \
 - `--max-context-chars` / `--max-evidence-docs`：压缩后证据上下文预算
 - `--snippet-max-chars` / `--doc-max-chars`：搜索摘要与打开文档的字符预算
 - `--planner-max-tokens` / `--tool-max-tokens` / `--answer-max-tokens` / `--verifier-max-tokens`：不同子 agent 的生成长度上限
+- `--query-focused-snippet`：改用 query 命中位置附近的搜索摘要，适合作为消融项，默认关闭
+- `--prefer-heuristic-queries`：优先执行确定性拆解 query，适合作为消融项，默认关闭
 - `--enable-thinking`：允许 Qwen thinking 输出；默认关闭以提高工具调用格式稳定性
 - `--no-model-planner` / `--no-model-verifier`：关闭规划或验证 LLM 子 agent，用确定性 fallback

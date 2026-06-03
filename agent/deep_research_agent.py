@@ -272,6 +272,8 @@ class ResearchConfig:
     disable_thinking: bool = True
     use_model_planner: bool = True
     use_model_verifier: bool = True
+    query_focused_snippet: bool = False
+    prefer_heuristic_queries: bool = False
 
 
 @dataclass
@@ -383,14 +385,13 @@ class EvidenceStore:
         return [doc["docid"] for doc in self._ranked_docs(limit)]
 
     def _ranked_docs(self, limit: int) -> List[Dict[str, Any]]:
-        def sort_key(doc: Dict[str, Any]) -> Tuple[int, int, float]:
+        def sort_key(doc: Dict[str, Any]) -> Tuple[int, float]:
             try:
                 score = float(doc.get("score") or 0)
             except (TypeError, ValueError):
                 score = 0.0
             has_detail = int(bool(doc.get("opened_text") or doc.get("windows")))
-            source_count = len(doc.get("source_queries") or [])
-            return (source_count, has_detail, score)
+            return (has_detail, score)
 
         return sorted(self.documents.values(), key=sort_key, reverse=True)[:limit]
 
@@ -490,12 +491,19 @@ class PlannerAgent:
         ]
         fallback_queries = fallback.get("search_queries", [])
 
+        if self.config.prefer_heuristic_queries:
+            search_queries = (
+                fallback_queries[: self.config.max_initial_queries]
+                + model_queries
+                + fallback_queries[self.config.max_initial_queries :]
+            )
+        else:
+            search_queries = model_queries + fallback_queries
+
         merged = {
             "subquestions": _normalize_list(parsed.get("subquestions"), limit=12)
             or fallback.get("subquestions", []),
-            "search_queries": fallback_queries[: self.config.max_initial_queries]
-            + model_queries
-            + fallback_queries[self.config.max_initial_queries :],
+            "search_queries": search_queries,
             "key_terms": _normalize_list(parsed.get("key_terms"), limit=20)
             + fallback.get("key_terms", []),
             "must_verify": _normalize_list(parsed.get("must_verify"), limit=12),
@@ -599,6 +607,7 @@ class DeepResearchAgent:
             default_k=self.config.search_top_k,
             snippet_max_chars=self.config.snippet_max_chars,
             doc_max_chars=self.config.doc_max_chars,
+            query_focused_snippet=self.config.query_focused_snippet,
         )
         self.planner = PlannerAgent(client=client, model_name=model_name, config=self.config)
         self.verifier = VerificationAgent(client=client, model_name=model_name, config=self.config)

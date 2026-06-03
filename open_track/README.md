@@ -38,7 +38,20 @@ Build SFT data from successful trajectories:
 python open_track/build_sft_data.py \
   --submission runs/deep_research_submission.jsonl \
   --eval-results runs/deep_research_eval.jsonl \
+  --max-tool-chars 1000 \
   --output open_track/data/sft_success.jsonl
+```
+
+If you have several legal development runs, build one SFT file per run and merge them:
+
+```bash
+python open_track/merge_sft_data.py \
+  --inputs \
+    open_track/data/sft_success_a.jsonl \
+    open_track/data/sft_success_b.jsonl \
+    open_track/data/sft_success_c.jsonl \
+  --output open_track/data/sft_success_merged.jsonl \
+  --dedupe-by query_id
 ```
 
 Install the optional Open Track dependencies on the server:
@@ -52,13 +65,19 @@ Run training with a model that already exists on the server:
 ```bash
 python open_track/train.py \
   --model-path ./Qwen3-8B \
-  --train-file open_track/data/sft_success.jsonl \
+  --train-file open_track/data/sft_success_merged.jsonl \
   --output-dir open_track/checkpoints/qwen3-deepresearch-lora \
   --lora \
+  --lora-r 8 \
+  --lora-alpha 16 \
+  --learning-rate 1e-5 \
+  --num-train-epochs 1 \
+  --max-seq-length 8192 \
+  --gradient-accumulation-steps 8 \
   --bf16
 ```
 
-Do not train on public-test or private-test data. Keep large generated training data and checkpoints on the cloud server if they are too large to submit.
+`train.py` uses assistant-only loss by default, so the model learns tool calls and final answers without being trained to copy user prompts or tool outputs. Do not train on public-test or private-test data. If `hard50` is the final scoring set in your course setting, use it for diagnosis only, not as SFT training data. Keep large generated training data and checkpoints on the cloud server if they are too large to submit.
 
 Serve the LoRA adapter with vLLM:
 

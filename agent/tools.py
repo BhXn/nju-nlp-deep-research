@@ -13,13 +13,18 @@ def retrieve_once(
     query: str,
     k: int = 5,
     snippet_max_chars: int = 1200,
+    query_focused_snippet: bool = False,
 ) -> List[Dict[str, Any]]:
     docs = searcher.search(query, k=k)
     return [
         {
             "docid": doc["docid"],
             "score": doc["score"],
-            "snippet": _query_focused_snippet(doc["text"], query, snippet_max_chars),
+            "snippet": (
+                _query_focused_snippet(doc["text"], query, snippet_max_chars)
+                if query_focused_snippet
+                else snippetize(doc["text"], snippet_max_chars)
+            ),
             "url": doc.get("url", ""),
         }
         for doc in docs
@@ -304,9 +309,16 @@ def get_search_tool_specs_and_registry(
     searcher: BrowseCompBM25Searcher,
     k: int = 5,
     snippet_max_chars: int = 1200,
+    query_focused_snippet: bool = False,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Callable[..., Any]]]:
     def search(query: str) -> List[Dict[str, Any]]:
-        return retrieve_once(searcher=searcher, query=query, k=k, snippet_max_chars=snippet_max_chars)
+        return retrieve_once(
+            searcher=searcher,
+            query=query,
+            k=k,
+            snippet_max_chars=snippet_max_chars,
+            query_focused_snippet=query_focused_snippet,
+        )
 
     tools = [
         {
@@ -334,9 +346,16 @@ def get_agent_tool_specs_and_registry(
     searcher: BrowseCompBM25Searcher,
     k: int = 5,
     snippet_max_chars: int = 1200,
+    query_focused_snippet: bool = False,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Callable[..., Any]]]:
     def search(query: str) -> List[Dict[str, Any]]:
-        return retrieve_once(searcher=searcher, query=query, k=k, snippet_max_chars=snippet_max_chars)
+        return retrieve_once(
+            searcher=searcher,
+            query=query,
+            k=k,
+            snippet_max_chars=snippet_max_chars,
+            query_focused_snippet=query_focused_snippet,
+        )
 
     def get_document(docid: str) -> Dict[str, Any]:
         doc = searcher.get_document(docid)
@@ -387,12 +406,19 @@ def get_deep_research_tool_specs_and_registry(
     snippet_max_chars: int = 1000,
     doc_max_chars: int = 6000,
     window_chars: int = 900,
+    query_focused_snippet: bool = False,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Callable[..., Any]]]:
     """Return the richer tool set used by the multi-round Deep Research agent."""
 
     def search(query: str, top_k: Optional[int] = None) -> List[Dict[str, Any]]:
         k = _clamp_int(top_k, default=default_k, minimum=1, maximum=max_k)
-        return retrieve_once(searcher=searcher, query=query, k=k, snippet_max_chars=snippet_max_chars)
+        return retrieve_once(
+            searcher=searcher,
+            query=query,
+            k=k,
+            snippet_max_chars=snippet_max_chars,
+            query_focused_snippet=query_focused_snippet,
+        )
 
     def open_doc(docid: str, max_chars: Optional[int] = None) -> Dict[str, Any]:
         doc = searcher.get_document(docid)

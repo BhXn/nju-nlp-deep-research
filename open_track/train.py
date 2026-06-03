@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 
 def parse_args() -> argparse.Namespace:
@@ -19,6 +20,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--save-steps", type=int, default=100)
     parser.add_argument("--bf16", action="store_true")
     parser.add_argument("--fp16", action="store_true")
+    parser.add_argument(
+        "--truncate-side",
+        choices=["left", "right"],
+        default="left",
+        help="Which side to drop when a trajectory exceeds max_seq_length.",
+    )
+    parser.add_argument(
+        "--train-on-all-tokens",
+        action="store_true",
+        help="Use full-sequence loss. Default trains only on assistant messages.",
+    )
     parser.add_argument("--gradient-checkpointing", action="store_true")
     parser.add_argument("--lora", action="store_true", help="Train a LoRA adapter instead of full fine-tuning.")
     parser.add_argument("--lora-r", type=int, default=16)
@@ -46,10 +58,10 @@ def main() -> None:
         from transformers import (
             AutoModelForCausalLM,
             AutoTokenizer,
-            DataCollatorForLanguageModeling,
             Trainer,
             TrainingArguments,
         )
+        import torch
     except ModuleNotFoundError as exc:
         raise ModuleNotFoundError(
             "Training dependencies are missing. Install them on the server, for example: "
@@ -72,6 +84,7 @@ def main() -> None:
     )
     if args.gradient_checkpointing:
         model.gradient_checkpointing_enable()
+        model.config.use_cache = False
 
     if args.lora:
         try:
@@ -98,6 +111,41 @@ def main() -> None:
 
     dataset = load_dataset("json", data_files=str(train_file), split="train")
 
+    def message_payload(message: Dict[str, Any]) -> str:
+        pieces: List[str] = []
+        content = message.get("content")
+        if content:
+            pieces.append(str(content))
+        if message.get("tool_calls"):
+            pieces.append(json.dumps({"tool_calls": message["tool_calls"]}, ensure_ascii=False))
+        return "\n".join(pieces)
+
+    def encode_piece(text: str) -> List[int]:
+        if not text:
+            return []
+        return tokenizer(text, add_special_tokens=False)["input_ids"]
+
+    def build_assistant_only_features(messages: List[Dict[str, Any]]) -> Dict[str, Any]:
+        input_ids: List[int] = []
+        labels: List[int] = []
+
+        for message in messages:
+            role = str(message.get("role", "unknown"))
+            payload = message_payload(message)
+            is_assistant = role == "assistant"
+
+            segments = [
+                (f"<|im_start|>{role}\n", False),
+                (payload, is_assistant),
+                ("\n<|im_end|>\n", is_assistant),
+            ]
+            for text, train_segment in segments:
+                token_ids = encode_piece(text)
+                input_ids.extend(token_ids)
+                labels.extend(token_ids if train_segment else [-100] * len(token_ids))
+
+        return {"input_ids": input_ids, "labels": labels}
+
     def formatting_func(example: Dict[str, Any]) -> str:
         messages = example.get("messages")
         if messages and hasattr(tokenizer, "apply_chat_template"):
@@ -108,21 +156,60 @@ def main() -> None:
         return str(example.get("text", ""))
 
     def tokenize(example: Dict[str, Any]) -> Dict[str, Any]:
-        text = formatting_func(example)
-        tokenized = tokenizer(
-            text,
-            truncation=True,
-            max_length=args.max_seq_length,
-            padding=False,
-        )
-        tokenized["labels"] = list(tokenized["input_ids"])
-        return tokenized
+        messages = example.get("messages")
+        if messages and not args.train_on_all_tokens:
+            features = build_assistant_only_features(messages)
+        else:
+            text = formatting_func(example)
+            input_ids = encode_piece(text)
+            features = {"input_ids": input_ids, "labels": list(input_ids)}
+
+        input_ids = features["input_ids"]
+        labels = features["labels"]
+        if len(input_ids) > args.max_seq_length:
+            if args.truncate_side == "left":
+                input_ids = input_ids[-args.max_seq_length :]
+                labels = labels[-args.max_seq_length :]
+            else:
+                input_ids = input_ids[: args.max_seq_length]
+                labels = labels[: args.max_seq_length]
+
+        return {
+            "input_ids": input_ids,
+            "attention_mask": [1] * len(input_ids),
+            "labels": labels,
+            "num_train_labels": sum(1 for label in labels if label != -100),
+        }
 
     tokenized_dataset = dataset.map(
         tokenize,
         remove_columns=dataset.column_names,
         desc="Tokenizing SFT data",
     )
+    tokenized_dataset = tokenized_dataset.filter(
+        lambda example: example["num_train_labels"] > 0,
+        desc="Filtering empty assistant targets",
+    )
+    tokenized_dataset = tokenized_dataset.remove_columns(["num_train_labels"])
+
+    def data_collator(features: List[Dict[str, Any]]) -> Dict[str, Any]:
+        max_length = max(len(feature["input_ids"]) for feature in features)
+        input_ids: List[List[int]] = []
+        attention_mask: List[List[int]] = []
+        labels: List[List[int]] = []
+        pad_token_id = tokenizer.pad_token_id
+
+        for feature in features:
+            pad_length = max_length - len(feature["input_ids"])
+            input_ids.append(feature["input_ids"] + [pad_token_id] * pad_length)
+            attention_mask.append(feature["attention_mask"] + [0] * pad_length)
+            labels.append(feature["labels"] + [-100] * pad_length)
+
+        return {
+            "input_ids": torch.tensor(input_ids, dtype=torch.long),
+            "attention_mask": torch.tensor(attention_mask, dtype=torch.long),
+            "labels": torch.tensor(labels, dtype=torch.long),
+        }
 
     training_args = TrainingArguments(
         output_dir=str(output_dir),
@@ -137,7 +224,6 @@ def main() -> None:
         report_to=[],
     )
 
-    data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
     trainer = Trainer(
         model=model,
         args=training_args,
