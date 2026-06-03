@@ -69,16 +69,16 @@ vllm serve ./Qwen3-8B \
   --tool-call-parser hermes \
   --trust-remote-code \
   --enable-lora \
-  --lora-modules deepresearch=open_track/checkpoints/qwen3-deepresearch-lora \
+  --lora-modules qwen_deepresearch=open_track/checkpoints/qwen3-deepresearch-lora \
   --enforce-eager \
   --max-model-len 16384 \
   --host 0.0.0.0 \
   --port 8000
 ```
 
-When the runtime LoRA server starts successfully, evaluate with the LoRA module name `deepresearch`.
+When the runtime LoRA server starts successfully, evaluate with the LoRA module name `qwen_deepresearch`. Keeping `qwen` in the served name lets the unchanged evaluator apply its Qwen no-thinking payload.
 
-If the Ascend/vLLM runtime LoRA path fails during model profiling or Torch Dynamo compilation, merge the adapter into the base model and serve the merged checkpoint as a normal model. The merged server also uses the served name `deepresearch`.
+If the Ascend/vLLM runtime LoRA path fails during model profiling or Torch Dynamo compilation, merge the adapter into the base model and serve the merged checkpoint as a normal model. The merged server also uses the served name `qwen_deepresearch`.
 
 ```bash
 python open_track/merge_lora.py \
@@ -88,7 +88,7 @@ python open_track/merge_lora.py \
   --dtype bfloat16
 
 vllm serve open_track/checkpoints/qwen3-deepresearch-merged \
-  --served-model-name deepresearch \
+  --served-model-name qwen_deepresearch \
   --enable-auto-tool-choice \
   --tool-call-parser hermes \
   --trust-remote-code \
@@ -103,7 +103,7 @@ Evaluate whichever LoRA deployment starts successfully:
 python -m agent.run_deep_research \
   --dataset browsecomp_plus_hard50.jsonl \
   --index-path indexes/browsecomp_plus_bm25.sqlite \
-  --model deepresearch \
+  --model qwen_deepresearch \
   --base-url http://127.0.0.1:8000/v1 \
   --max-context-chars 18000 \
   --max-evidence-docs 20 \
@@ -116,7 +116,7 @@ python -m agent.run_deep_research \
 python -m agent.eval \
   --submission runs/deep_research_submission_lora.jsonl \
   --dataset browsecomp_plus_hard50.jsonl \
-  --model deepresearch \
+  --model qwen_deepresearch \
   --base-url http://127.0.0.1:8000/v1 \
   --output runs/deep_research_eval_lora.jsonl
 ```

@@ -19,7 +19,7 @@ def retrieve_once(
         {
             "docid": doc["docid"],
             "score": doc["score"],
-            "snippet": snippetize(doc["text"], snippet_max_chars),
+            "snippet": _query_focused_snippet(doc["text"], query, snippet_max_chars),
             "url": doc.get("url", ""),
         }
         for doc in docs
@@ -57,6 +57,7 @@ def _tokenize_text(text: str) -> List[str]:
         "after",
         "also",
         "answer",
+        "author",
         "before",
         "between",
         "book",
@@ -66,14 +67,19 @@ def _tokenize_text(text: str) -> List[str]:
         "from",
         "have",
         "into",
+        "looking",
         "last",
         "name",
+        "named",
         "question",
+        "research",
         "same",
+        "submitted",
         "that",
         "their",
         "there",
         "this",
+        "university",
         "what",
         "when",
         "where",
@@ -86,29 +92,11 @@ def _tokenize_text(text: str) -> List[str]:
     return [token for token in tokens if len(token) >= 4 and token not in stopwords]
 
 
-def _extract_distinctive_terms(question: str, limit: int = 12) -> List[str]:
-    terms: List[str] = []
-
-    for match in re.finditer(r"[\"“”]([^\"“”]{3,80})[\"“”]", question):
-        terms.append(match.group(1).strip())
-
-    for match in re.finditer(r"\b(?:1[5-9]\d{2}|20\d{2})s?\b", question):
-        terms.append(match.group(0))
-
-    capitalized = re.findall(
-        r"\b[A-Z][A-Za-z'&.-]+(?:\s+[A-Z][A-Za-z'&.-]+){1,5}\b",
-        question,
-    )
-    terms.extend(capitalized)
-
-    for token in _tokenize_text(question):
-        if token not in terms:
-            terms.append(token)
-
+def _ordered_unique(items: List[str], limit: int) -> List[str]:
     deduped: List[str] = []
     seen = set()
-    for term in terms:
-        normalized = re.sub(r"\s+", " ", str(term)).strip()
+    for item in items:
+        normalized = re.sub(r"\s+", " ", str(item)).strip(" \t\n\r,.;:")
         key = normalized.lower()
         if not normalized or key in seen:
             continue
@@ -117,6 +105,108 @@ def _extract_distinctive_terms(question: str, limit: int = 12) -> List[str]:
         if len(deduped) >= limit:
             break
     return deduped
+
+
+def _extract_quoted_phrases(text: str, limit: int = 8) -> List[str]:
+    phrases = [
+        match.group(1).strip()
+        for match in re.finditer(r"[\"“”]([^\"“”]{3,100})[\"“”]", text)
+    ]
+    return _ordered_unique(phrases, limit=limit)
+
+
+def _extract_years(text: str, limit: int = 8) -> List[str]:
+    return _ordered_unique(re.findall(r"\b(?:1[5-9]\d{2}|20\d{2})s?\b", text), limit=limit)
+
+
+def _extract_capitalized_phrases(text: str, limit: int = 10) -> List[str]:
+    phrases = re.findall(
+        r"\b[A-Z][A-Za-z'&.-]+(?:\s+(?:of|the|and|for|in|at|de|da|del|la|le|van|von|[A-Z][A-Za-z'&.-]+)){1,6}\b",
+        text,
+    )
+    return _ordered_unique(phrases, limit=limit)
+
+
+def _query_focused_snippet(text: str, query: str, max_chars: Optional[int]) -> str:
+    if not max_chars or max_chars <= 0 or len(text) <= max_chars:
+        return text
+
+    anchors = _ordered_unique(
+        _extract_quoted_phrases(query, limit=6)
+        + _extract_capitalized_phrases(query, limit=8)
+        + _extract_years(query, limit=6)
+        + _tokenize_text(query)[:14],
+        limit=24,
+    )
+    if not anchors:
+        return snippetize(text, max_chars)
+
+    lowered_text = text.lower()
+    lowered_anchors = [anchor.lower() for anchor in anchors]
+    window_chars = max(260, min(900, max_chars // 2))
+    candidates: List[Dict[str, Any]] = []
+
+    for anchor in lowered_anchors:
+        start = 0
+        found = 0
+        while found < 2:
+            index = lowered_text.find(anchor, start)
+            if index < 0:
+                break
+            left = max(0, index - window_chars // 2)
+            right = min(len(text), index + len(anchor) + window_chars // 2)
+            window_lower = lowered_text[left:right]
+            score = sum(3 if " " in term and term in window_lower else 1 for term in lowered_anchors if term in window_lower)
+            candidates.append({"score": score, "left": left, "right": right})
+            start = index + max(1, len(anchor))
+            found += 1
+
+    if not candidates:
+        return snippetize(text, max_chars)
+
+    selected: List[Tuple[int, int]] = []
+    used_spans: List[Tuple[int, int]] = []
+    for item in sorted(candidates, key=lambda candidate: (candidate["score"], -candidate["left"]), reverse=True):
+        left = int(item["left"])
+        right = int(item["right"])
+        if any(not (right < used_left or left > used_right) for used_left, used_right in used_spans):
+            continue
+        selected.append((left, right))
+        used_spans.append((left, right))
+        if len(selected) >= 3:
+            break
+
+    selected.sort()
+    pieces: List[str] = []
+    remaining = max_chars
+    for left, right in selected:
+        if remaining <= 0:
+            break
+        piece = text[left:right].strip()
+        if left > 0:
+            piece = "..." + piece
+        if right < len(text):
+            piece = piece + "..."
+        if len(piece) > remaining:
+            piece = snippetize(piece, remaining)
+        pieces.append(piece)
+        remaining -= len(piece) + 5
+
+    return "\n...\n".join(piece for piece in pieces if piece) or snippetize(text, max_chars)
+
+
+def _extract_distinctive_terms(question: str, limit: int = 12) -> List[str]:
+    terms: List[str] = []
+
+    terms.extend(_extract_quoted_phrases(question, limit=8))
+    terms.extend(_extract_years(question, limit=8))
+    terms.extend(_extract_capitalized_phrases(question, limit=10))
+
+    for token in _tokenize_text(question):
+        if token not in terms:
+            terms.append(token)
+
+    return _ordered_unique(terms, limit=limit)
 
 
 def decompose_question_heuristic(question: str, max_subquestions: int = 8) -> Dict[str, Any]:
@@ -129,13 +219,26 @@ def decompose_question_heuristic(question: str, max_subquestions: int = 8) -> Di
     if not pieces:
         pieces = [question.strip()]
 
-    distinctive_terms = _extract_distinctive_terms(question)
+    distinctive_terms = _extract_distinctive_terms(question, limit=18)
+    quoted_phrases = _extract_quoted_phrases(question, limit=8)
+    years = _extract_years(question, limit=8)
+    capitalized_phrases = _extract_capitalized_phrases(question, limit=10)
+    keyword_tokens = _tokenize_text(question)[:12]
     subquestions = pieces[: max(1, max_subquestions)]
     search_queries: List[str] = []
 
-    if question.strip():
-        search_queries.append(question.strip())
-    search_queries.extend(distinctive_terms[: max_subquestions])
+    search_queries.extend(quoted_phrases)
+    search_queries.extend(capitalized_phrases)
+    search_queries.extend(distinctive_terms[: max_subquestions + 2])
+
+    for anchor in _ordered_unique(quoted_phrases + capitalized_phrases, limit=6):
+        for year in years[:3]:
+            search_queries.append(f"{anchor} {year}")
+        for token in keyword_tokens[:4]:
+            search_queries.append(f"{anchor} {token}")
+
+    if years and keyword_tokens:
+        search_queries.append(" ".join(years[:2] + keyword_tokens[:5]))
 
     for piece in subquestions:
         terms = _extract_distinctive_terms(piece, limit=4)
@@ -144,19 +247,12 @@ def decompose_question_heuristic(question: str, max_subquestions: int = 8) -> Di
         else:
             search_queries.append(piece)
 
-    deduped_queries: List[str] = []
-    seen = set()
-    for query in search_queries:
-        query = re.sub(r"\s+", " ", query).strip()
-        key = query.lower()
-        if not query or key in seen:
-            continue
-        seen.add(key)
-        deduped_queries.append(query)
+    if not search_queries and question.strip():
+        search_queries.append(question.strip())
 
     return {
         "subquestions": subquestions,
-        "search_queries": deduped_queries[: max_subquestions + 4],
+        "search_queries": _ordered_unique(search_queries, limit=max_subquestions + 10),
         "key_terms": distinctive_terms,
     }
 

@@ -26,7 +26,9 @@ Before finalizing, verify that the exact answer is supported by the retrieved ev
 When you have enough evidence, answer exactly in this format:
 Explanation: <brief evidence-based explanation>
 Exact Answer: <short final answer only>
-Confidence: <0-100>%"""
+Confidence: <0-100>%
+
+Do not include hidden reasoning, scratch work, or "Wait..." style analysis in the final answer."""
 
 
 PLANNER_SYSTEM_PROMPT = """You are the planning agent in a multi-agent research system.
@@ -40,6 +42,11 @@ Return strict JSON only, with this schema:
 }
 
 Good search queries are short and distinctive: names, titles, quoted phrases, dates, places, and rare clue combinations.
+Avoid copying the whole question as one query. Prefer 2-6 term queries such as:
+- person/title + year
+- quoted phrase + place
+- award/book/institution + author name
+- rare clue term + date
 Do not include a guessed final answer."""
 
 
@@ -47,6 +54,7 @@ ANSWER_SYSTEM_PROMPT = """You are the answer synthesis agent.
 Use only the supplied research state and evidence. Prefer exact titles, names, dates, and quantities copied from evidence.
 If evidence is incomplete, still provide the best-supported candidate and lower the confidence instead of refusing by default.
 The Exact Answer line must contain only the answer string, not a sentence, hedge, explanation, or citation.
+Do not include scratch work, alternatives, or hidden reasoning. If the evidence points to one candidate, output that candidate only on the Exact Answer line.
 Return exactly:
 Explanation: <brief evidence-based explanation>
 Exact Answer: <short final answer only>
@@ -197,6 +205,21 @@ def _extract_exact_answer(text: str) -> str:
         if match:
             return _clean_answer_string(match.group(1))
 
+    answer_like_patterns = [
+        r"(?:the\s+(?:answer|name|club|company|person|title|date|number|language|location|university|species)\s+is|answer\s+is|it\s+is|would\s+be)\s+[\"“']?(.+?)[\"”']?(?:[.\n]|$)",
+        r"(?:best\s+(?:answer|candidate)\s+is)\s+[\"“']?(.+?)[\"”']?(?:[.\n]|$)",
+    ]
+    for pattern in answer_like_patterns:
+        matches = list(re.finditer(pattern, cleaned, flags=re.IGNORECASE | re.DOTALL))
+        for match in reversed(matches):
+            candidate = _clean_answer_string(match.group(1))
+            if 1 <= len(candidate) <= 160 and not re.search(
+                r"\b(?:unknown|unable|insufficient|cannot determine|not enough evidence)\b",
+                candidate,
+                flags=re.IGNORECASE,
+            ):
+                return candidate
+
     lines = [line.strip() for line in cleaned.splitlines() if line.strip()]
     if not lines:
         return ""
@@ -222,7 +245,7 @@ def _ensure_final_format(candidate: str, fallback_confidence: int = 45) -> str:
 
 
 def _chat_extra_payload(model_name: str, disable_thinking: bool) -> Optional[Dict[str, Any]]:
-    if disable_thinking and "qwen" in model_name.lower():
+    if disable_thinking:
         return {"chat_template_kwargs": {"enable_thinking": False}}
     return None
 
@@ -360,13 +383,14 @@ class EvidenceStore:
         return [doc["docid"] for doc in self._ranked_docs(limit)]
 
     def _ranked_docs(self, limit: int) -> List[Dict[str, Any]]:
-        def sort_key(doc: Dict[str, Any]) -> Tuple[float, int]:
+        def sort_key(doc: Dict[str, Any]) -> Tuple[int, int, float]:
             try:
                 score = float(doc.get("score") or 0)
             except (TypeError, ValueError):
                 score = 0.0
             has_detail = int(bool(doc.get("opened_text") or doc.get("windows")))
-            return (has_detail, score)
+            source_count = len(doc.get("source_queries") or [])
+            return (source_count, has_detail, score)
 
         return sorted(self.documents.values(), key=sort_key, reverse=True)[:limit]
 
@@ -391,13 +415,13 @@ class EvidenceStore:
             if doc.get("source_queries"):
                 block_lines.append("source_queries: " + "; ".join(doc["source_queries"][:3]))
             if doc.get("snippet"):
-                block_lines.append("snippet:\n" + str(doc["snippet"]))
+                block_lines.append("snippet:\n" + _truncate(str(doc["snippet"]), 1200))
             if doc.get("opened_text"):
-                block_lines.append("opened_text:\n" + str(doc["opened_text"]))
+                block_lines.append("opened_text:\n" + _truncate(str(doc["opened_text"]), 1800))
             for window in doc.get("windows", [])[:3]:
                 if isinstance(window, dict) and window.get("text"):
                     matched = window.get("matched", "")
-                    block_lines.append(f"keyword_window matched={matched}:\n{window['text']}")
+                    block_lines.append(f"keyword_window matched={matched}:\n{_truncate(str(window['text']), 1200)}")
             doc_blocks.append("\n".join(block_lines))
         if doc_blocks:
             parts.append("Evidence documents:\n" + "\n\n".join(doc_blocks))
@@ -458,11 +482,20 @@ class PlannerAgent:
         if not isinstance(parsed, dict):
             return fallback
 
+        model_queries = _normalize_list(parsed.get("search_queries"), limit=16)
+        model_queries = [
+            query
+            for query in model_queries
+            if len(query) <= 140 and len(query.split()) <= 12
+        ]
+        fallback_queries = fallback.get("search_queries", [])
+
         merged = {
             "subquestions": _normalize_list(parsed.get("subquestions"), limit=12)
             or fallback.get("subquestions", []),
-            "search_queries": _normalize_list(parsed.get("search_queries"), limit=16)
-            + fallback.get("search_queries", []),
+            "search_queries": fallback_queries[: self.config.max_initial_queries]
+            + model_queries
+            + fallback_queries[self.config.max_initial_queries :],
             "key_terms": _normalize_list(parsed.get("key_terms"), limit=20)
             + fallback.get("key_terms", []),
             "must_verify": _normalize_list(parsed.get("must_verify"), limit=12),

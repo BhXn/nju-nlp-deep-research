@@ -169,5 +169,9 @@ python -m agent.eval \
 - `--max-rounds`：初始检索后的 ReAct 轮数
 - `--max-initial-queries`：规划阶段生成并执行的初始检索数
 - `--top-k`：每次 BM25 检索返回文档数
+- `--max-tool-calls-per-round` / `--max-total-tool-calls` / `--max-no-new-info-rounds`：停止条件和工具调用预算
+- `--max-context-chars` / `--max-evidence-docs`：压缩后证据上下文预算
+- `--snippet-max-chars` / `--doc-max-chars`：搜索摘要与打开文档的字符预算
+- `--planner-max-tokens` / `--tool-max-tokens` / `--answer-max-tokens` / `--verifier-max-tokens`：不同子 agent 的生成长度上限
 - `--enable-thinking`：允许 Qwen thinking 输出；默认关闭以提高工具调用格式稳定性
 - `--no-model-planner` / `--no-model-verifier`：关闭规划或验证 LLM 子 agent，用确定性 fallback
