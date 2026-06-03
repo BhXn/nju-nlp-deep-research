@@ -478,11 +478,13 @@ def get_deep_research_tool_specs_and_registry(
             terms = _tokenize_text(claim)[:10]
 
         evidence: List[Dict[str, Any]] = []
+        missing_docids: List[str] = []
         best_overlap = 0.0
         claim_tokens = set(_tokenize_text(claim))
         for docid in candidate_docids[:8]:
             doc = searcher.get_document(docid)
             if doc is None:
+                missing_docids.append(docid)
                 continue
             doc_text_lower = doc["text"].lower()
             hits = [term for term in terms if term.lower() in doc_text_lower]
@@ -506,6 +508,7 @@ def get_deep_research_tool_specs_and_registry(
         return {
             "claim": claim,
             "docids_checked": candidate_docids[:8],
+            "missing_docids": missing_docids,
             "supported_likely": bool(evidence and best_overlap >= 0.35),
             "best_token_overlap": round(best_overlap, 3),
             "evidence": evidence,

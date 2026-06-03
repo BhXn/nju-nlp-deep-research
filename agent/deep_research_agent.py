@@ -22,6 +22,7 @@ Workflow:
 
 Do not use Google, Bing, live web search, hidden gold answers, or outside knowledge.
 Before finalizing, verify that the exact answer is supported by the retrieved evidence.
+When using document tools, pass the docid value shown in evidence headers, not the Evidence rank number.
 
 When you have enough evidence, answer exactly in this format:
 Explanation: <brief evidence-based explanation>
@@ -54,6 +55,8 @@ ANSWER_SYSTEM_PROMPT = """You are the answer synthesis agent.
 Use only the supplied research state and evidence. Prefer exact titles, names, dates, and quantities copied from evidence.
 If evidence is incomplete, still provide the best-supported candidate and lower the confidence instead of refusing by default.
 The Exact Answer line must contain only the answer string, not a sentence, hedge, explanation, or citation.
+First identify the exact entity type requested by the question, and make sure the answer is that entity rather than a related clue, author, example, or intermediate result.
+For multi-hop questions, every clue must attach to the same chain before you choose the answer.
 Do not include scratch work, alternatives, or hidden reasoning. If the evidence points to one candidate, output that candidate only on the Exact Answer line.
 Return exactly:
 Explanation: <brief evidence-based explanation>
@@ -72,7 +75,8 @@ Return strict JSON only:
   "follow_up_queries": ["..."]
 }
 
-Use "supported" only when the evidence directly supports the exact answer."""
+Use "supported" only when the evidence directly supports the exact answer.
+Use an integer confidence from 0 to 100. If confidence is below 60, the verdict must be "unsupported" or "uncertain"."""
 
 
 def _strip_thinking(text: str) -> str:
@@ -383,6 +387,41 @@ class EvidenceStore:
 
     def top_docids(self, limit: int = 12) -> List[str]:
         return [doc["docid"] for doc in self._ranked_docs(limit)]
+
+    def resolve_doc_reference(self, reference: Any) -> str:
+        text = str(reference or "").strip()
+        if not text:
+            return text
+        if text in self.documents:
+            return text
+
+        match = re.match(r"^(?:evidence\s*)?#?(\d+)$", text, flags=re.IGNORECASE)
+        if match:
+            rank = int(match.group(1))
+            ranked_docs = self._ranked_docs(max(rank, len(self.documents)))
+            if 1 <= rank <= len(ranked_docs):
+                return str(ranked_docs[rank - 1]["docid"])
+        return text
+
+    def resolve_doc_references(self, references: Any) -> List[str]:
+        if references is None:
+            return []
+        if isinstance(references, list):
+            raw_refs = references
+        elif isinstance(references, str):
+            raw_refs = [item for item in re.split(r"[,;\s]+", references) if item]
+        else:
+            raw_refs = [references]
+
+        resolved: List[str] = []
+        seen = set()
+        for reference in raw_refs:
+            docid = self.resolve_doc_reference(reference)
+            if not docid or docid in seen:
+                continue
+            seen.add(docid)
+            resolved.append(docid)
+        return resolved
 
     def _ranked_docs(self, limit: int) -> List[Dict[str, Any]]:
         def sort_key(doc: Dict[str, Any]) -> Tuple[int, float]:
@@ -776,7 +815,8 @@ class DeepResearchAgent:
             f"Research round: {round_id}/{self.config.max_rounds}\n\n"
             f"Current compressed research state:\n{evidence_context}\n\n"
             "Decide the next action. If evidence is enough, provide the final answer in the required format. "
-            "Otherwise call one or more tools. Avoid repeating previous searches unless you change the query."
+            "Otherwise call one or more tools. Avoid repeating previous searches unless you change the query. "
+            "For document tools, use the docid value from an evidence header rather than the Evidence rank."
         )
         return [
             {"role": "system", "content": RESEARCH_SYSTEM_PROMPT},
@@ -820,8 +860,11 @@ class DeepResearchAgent:
         messages: List[Dict[str, Any]],
         state: EvidenceStore,
     ) -> str:
+        if self.config.verification_rounds <= 0:
+            return candidate
+
         current = candidate
-        for _ in range(max(1, self.config.verification_rounds)):
+        for _ in range(self.config.verification_rounds):
             exact_answer = _extract_exact_answer(current)
             evidence_context = state.to_context(
                 max_chars=self.config.max_context_chars,
@@ -906,15 +949,34 @@ class DeepResearchAgent:
             tool_name = "open_doc"
         if tool_name not in self.tool_registry:
             return tool_name, arguments, {"error": f"unknown tool: {tool_name}"}
+
+        call_arguments = dict(arguments)
+        recorded_arguments = dict(arguments)
+        if tool_name in {"open_doc", "find_in_doc"} and call_arguments.get("docid") is not None:
+            original_docid = call_arguments.get("docid")
+            resolved_docid = state.resolve_doc_reference(original_docid)
+            call_arguments["docid"] = resolved_docid
+            recorded_arguments["docid"] = resolved_docid
+            if str(original_docid).strip() != resolved_docid:
+                recorded_arguments["original_docid_reference"] = original_docid
+        elif tool_name == "verify_claim" and call_arguments.get("docids") is not None:
+            original_docids = call_arguments.get("docids")
+            original_docids_text = _json_dumps(original_docids)
+            resolved_docids = state.resolve_doc_references(original_docids)
+            call_arguments["docids"] = resolved_docids
+            recorded_arguments["docids"] = resolved_docids
+            if original_docids_text != _json_dumps(resolved_docids):
+                recorded_arguments["original_docid_references"] = original_docids
+
         if tool_name == "search":
-            query = str(arguments.get("query", "")).strip()
+            query = str(call_arguments.get("query", "")).strip()
             if query.lower() in state.seen_queries:
-                return tool_name, arguments, {"query": query, "skipped": "duplicate_search", "results": []}
+                return tool_name, recorded_arguments, {"query": query, "skipped": "duplicate_search", "results": []}
         try:
-            result = self.tool_registry[tool_name](**arguments)
+            result = self.tool_registry[tool_name](**call_arguments)
         except Exception as exc:
-            result = {"error": str(exc), "tool": tool_name, "arguments": arguments}
-        return tool_name, arguments, result
+            result = {"error": str(exc), "tool": tool_name, "arguments": recorded_arguments}
+        return tool_name, recorded_arguments, result
 
     def _extract_tool_calls_from_content(self, content: str) -> List[Dict[str, Any]]:
         parsed = _extract_json_value(content)
