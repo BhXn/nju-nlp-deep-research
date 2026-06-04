@@ -276,6 +276,7 @@ class ResearchConfig:
     disable_thinking: bool = True
     use_model_planner: bool = True
     use_model_verifier: bool = True
+    use_react_verify_tool: bool = True
     query_focused_snippet: bool = False
     prefer_heuristic_queries: bool = False
 
@@ -620,9 +621,12 @@ class VerificationAgent:
             confidence = int(parsed.get("confidence", 0))
         except (TypeError, ValueError):
             confidence = 0
+        confidence = max(0, min(100, confidence))
+        if verdict == "supported" and confidence < 60:
+            verdict = "uncertain"
         return {
             "verdict": verdict,
-            "confidence": max(0, min(100, confidence)),
+            "confidence": confidence,
             "reason": str(parsed.get("reason", "")),
             "missing_info": _normalize_list(parsed.get("missing_info"), limit=8),
             "follow_up_queries": _normalize_list(parsed.get("follow_up_queries"), limit=5),
@@ -648,6 +652,12 @@ class DeepResearchAgent:
             doc_max_chars=self.config.doc_max_chars,
             query_focused_snippet=self.config.query_focused_snippet,
         )
+        if not self.config.use_react_verify_tool:
+            self.tool_specs = [
+                tool
+                for tool in self.tool_specs
+                if (tool.get("function") or {}).get("name") != "verify_claim"
+            ]
         self.planner = PlannerAgent(client=client, model_name=model_name, config=self.config)
         self.verifier = VerificationAgent(client=client, model_name=model_name, config=self.config)
         self._call_counter = 0
@@ -818,6 +828,11 @@ class DeepResearchAgent:
             "Otherwise call one or more tools. Avoid repeating previous searches unless you change the query. "
             "For document tools, use the docid value from an evidence header rather than the Evidence rank."
         )
+        if not self.config.use_react_verify_tool:
+            instruction += (
+                " The lexical verify_claim tool is disabled during research rounds; use search, open_doc, "
+                "and find_in_doc to gather stronger evidence before answering."
+            )
         return [
             {"role": "system", "content": RESEARCH_SYSTEM_PROMPT},
             {"role": "user", "content": instruction},
@@ -949,6 +964,11 @@ class DeepResearchAgent:
             tool_name = "open_doc"
         if tool_name not in self.tool_registry:
             return tool_name, arguments, {"error": f"unknown tool: {tool_name}"}
+        if tool_name == "verify_claim" and not self.config.use_react_verify_tool:
+            return tool_name, arguments, {
+                "skipped": "react_verify_tool_disabled",
+                "reason": "Use search, open_doc, or find_in_doc during research rounds.",
+            }
 
         call_arguments = dict(arguments)
         recorded_arguments = dict(arguments)
