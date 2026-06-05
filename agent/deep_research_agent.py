@@ -59,6 +59,7 @@ First identify the exact entity type requested by the question, and make sure th
 For multi-hop questions, every clue must attach to the same chain before you choose the answer.
 If the question asks for a person, return the person's full name, not only a title, role, nationality, or related person.
 If the question asks for a country, nationality, year, date, street, school grade, species, company, paper, or book, return exactly that type.
+Do not answer with a value, name, date, title, or organization that is already stated in the question unless the evidence proves the question is asking you to repeat it.
 Do not include scratch work, alternatives, or hidden reasoning. If the evidence points to one candidate, output that candidate only on the Exact Answer line.
 Return exactly:
 Explanation: <brief evidence-based explanation>
@@ -78,6 +79,7 @@ Return strict JSON only:
 }
 
 Use "supported" only when the evidence directly supports the exact answer.
+Treat candidate answers that are merely copied from the question as suspect clue values unless the evidence proves they are the requested target.
 Use an integer confidence from 0 to 100. If confidence is below 60, the verdict must be "unsupported" or "uncertain"."""
 
 
@@ -182,6 +184,7 @@ def _clean_answer_string(answer: str) -> str:
         flags=re.IGNORECASE | re.DOTALL,
     )
     cleaned = re.sub(r"^\s*(?:Exact Answer|Final Answer|Answer)\s*:\s*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"^\s*Explanation\s*:\s*", "", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
 
     lowered = cleaned.lower()
@@ -198,6 +201,19 @@ def _clean_answer_string(answer: str) -> str:
             break
 
     return cleaned.strip(" .")
+
+
+def _normalize_answer_for_match(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", str(text or "").lower()).strip()
+
+
+def _answer_copied_from_question(question: str, answer: str) -> bool:
+    normalized_answer = _normalize_answer_for_match(answer)
+    if len(normalized_answer) < 4:
+        return False
+    if normalized_answer in {"unknown", "none", "not provided", "not enough information", "unable to determine"}:
+        return False
+    return normalized_answer in _normalize_answer_for_match(question)
 
 
 def _extract_exact_answer(text: str) -> str:
@@ -858,15 +874,31 @@ class DeepResearchAgent:
             {"role": "user", "content": instruction},
         ]
 
-    def _synthesize_answer(self, question: str, state: EvidenceStore, previous_answer: str = "") -> str:
+    def _synthesize_answer(
+        self,
+        question: str,
+        state: EvidenceStore,
+        previous_answer: str = "",
+        avoid_answers: Optional[List[str]] = None,
+    ) -> str:
         evidence_context = state.to_context(
             max_chars=self.config.max_context_chars,
             max_docs=self.config.max_evidence_docs,
         )
+        avoid_section = ""
+        if avoid_answers:
+            avoid_lines = "\n".join(f"- {answer}" for answer in avoid_answers if answer)
+            if avoid_lines:
+                avoid_section = (
+                    "\nThe following candidate answer(s) appear to be clue values copied from the question. "
+                    "Do not use them unless the evidence explicitly proves they are the requested target:\n"
+                    f"{avoid_lines}\n"
+                )
         user_message = (
             f"Original question:\n{question}\n\n"
             f"Previous draft answer, if any:\n{previous_answer or '(none)'}\n\n"
             f"Compressed evidence state:\n{evidence_context}\n\n"
+            f"{avoid_section}"
             "Now synthesize the best final answer."
         )
         try:
@@ -901,6 +933,14 @@ class DeepResearchAgent:
         current = candidate
         for _ in range(self.config.verification_rounds):
             exact_answer = _extract_exact_answer(current)
+            if _answer_copied_from_question(question, exact_answer):
+                current = self._synthesize_answer(
+                    question=question,
+                    state=state,
+                    previous_answer=current,
+                    avoid_answers=[exact_answer],
+                )
+                exact_answer = _extract_exact_answer(current)
             evidence_context = state.to_context(
                 max_chars=self.config.max_context_chars,
                 max_docs=self.config.max_evidence_docs,
