@@ -108,10 +108,13 @@ def analyze_run(submission_path: str, eval_path: str, dataset_path: str) -> Dict
         model_verify_count = 0
         supported_model_verify = 0
         missing_docid_calls = 0
+        skipped_duplicate_verify = 0
         for name, result, raw_content in iter_tool_results(submission.get("messages") or []):
             tool_counts[name] += 1
             tool_texts.append(raw_content)
             if name == "verify_claim" and isinstance(result, dict):
+                if result.get("skipped") == "duplicate_react_verify_claim":
+                    skipped_duplicate_verify += 1
                 if "supported_likely" in result:
                     lexical_verify_count += 1
                     lexical_verdicts[str(bool(result.get("supported_likely")))] += 1
@@ -154,6 +157,7 @@ def analyze_run(submission_path: str, eval_path: str, dataset_path: str) -> Dict
                 "model_verify_count": model_verify_count,
                 "supported_model_verify": supported_model_verify,
                 "missing_docid_verify_calls": missing_docid_calls,
+                "skipped_duplicate_verify_calls": skipped_duplicate_verify,
             }
         )
 
@@ -171,6 +175,9 @@ def analyze_run(submission_path: str, eval_path: str, dataset_path: str) -> Dict
         ),
         "missing_docid_verify_queries": sum(
             1 for example in examples if example["missing_docid_verify_calls"] > 0
+        ),
+        "skipped_duplicate_verify_queries": sum(
+            1 for example in examples if example["skipped_duplicate_verify_calls"] > 0
         ),
         "examples": examples,
     }
@@ -190,6 +197,7 @@ def print_section(title: str, rows: Iterable[Dict[str, Any]], limit: int) -> Non
                 supported=row["supported_model_verify"],
                 missing=row["missing_docid_verify_calls"],
             )
+            + f" | dup_skips={row['skipped_duplicate_verify_calls']}"
         )
         count += 1
         if count >= limit:
@@ -213,6 +221,7 @@ def main() -> None:
         print(f"{key}: {json.dumps(report[key], ensure_ascii=False, sort_keys=True)}")
     print(f"wrong_supported_by_model_verifier: {report['wrong_supported_by_model_verifier']}")
     print(f"missing_docid_verify_queries: {report['missing_docid_verify_queries']}")
+    print(f"skipped_duplicate_verify_queries: {report['skipped_duplicate_verify_queries']}")
 
     examples = report["examples"]
     print_section("WRONG BUT GOLD APPEARED IN TOOL OUTPUT", (row for row in examples if row["category"] == "wrong_gold_seen"), args.top)
@@ -225,6 +234,11 @@ def main() -> None:
     print_section(
         "VERIFY CALLS WITH MISSING DOCIDS",
         (row for row in examples if row["missing_docid_verify_calls"] > 0),
+        args.top,
+    )
+    print_section(
+        "VERIFY CALLS SKIPPED AS DUPLICATES",
+        (row for row in examples if row["skipped_duplicate_verify_calls"] > 0),
         args.top,
     )
 

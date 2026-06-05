@@ -57,6 +57,12 @@ def parse_args() -> argparse.Namespace:
         help="Remove lexical verify_claim from ReAct research rounds while keeping final LLM verification.",
     )
     parser.add_argument(
+        "--max-react-verify-repeats",
+        type=int,
+        default=2,
+        help="Maximum repeated ReAct verify_claim calls for the same normalized claim. Use 0 to disable the cap.",
+    )
+    parser.add_argument(
         "--query-focused-snippet",
         action="store_true",
         help="Use query-centered search snippets instead of document-prefix snippets.",
@@ -92,6 +98,7 @@ def build_config(args: argparse.Namespace) -> ResearchConfig:
         use_model_planner=not args.no_model_planner,
         use_model_verifier=not args.no_model_verifier,
         use_react_verify_tool=not args.no_react_verify_tool,
+        max_react_verify_repeats=args.max_react_verify_repeats,
         query_focused_snippet=args.query_focused_snippet,
         prefer_heuristic_queries=args.prefer_heuristic_queries,
     )

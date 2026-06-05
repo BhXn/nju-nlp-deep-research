@@ -57,6 +57,8 @@ If evidence is incomplete, still provide the best-supported candidate and lower 
 The Exact Answer line must contain only the answer string, not a sentence, hedge, explanation, or citation.
 First identify the exact entity type requested by the question, and make sure the answer is that entity rather than a related clue, author, example, or intermediate result.
 For multi-hop questions, every clue must attach to the same chain before you choose the answer.
+If the question asks for a person, return the person's full name, not only a title, role, nationality, or related person.
+If the question asks for a country, nationality, year, date, street, school grade, species, company, paper, or book, return exactly that type.
 Do not include scratch work, alternatives, or hidden reasoning. If the evidence points to one candidate, output that candidate only on the Exact Answer line.
 Return exactly:
 Explanation: <brief evidence-based explanation>
@@ -173,6 +175,12 @@ def _parse_tool_arguments(arguments: Any) -> Dict[str, Any]:
 
 def _clean_answer_string(answer: str) -> str:
     cleaned = _strip_thinking(str(answer)).strip().strip('"').strip()
+    cleaned = re.sub(
+        r"^\s*Explanation\s*:\s*.*?\b(?:Exact Answer|Final Answer|Answer)\s*:\s*",
+        "",
+        cleaned,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
     cleaned = re.sub(r"^\s*(?:Exact Answer|Final Answer|Answer)\s*:\s*", "", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
 
@@ -277,6 +285,7 @@ class ResearchConfig:
     use_model_planner: bool = True
     use_model_verifier: bool = True
     use_react_verify_tool: bool = True
+    max_react_verify_repeats: int = 2
     query_focused_snippet: bool = False
     prefer_heuristic_queries: bool = False
 
@@ -291,6 +300,7 @@ class EvidenceStore:
     documents: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     seen_queries: set[str] = field(default_factory=set)
     verified_claims: List[Dict[str, Any]] = field(default_factory=list)
+    react_verify_counts: Dict[str, int] = field(default_factory=dict)
     no_new_info_rounds: int = 0
 
     def add_plan(self, plan: Dict[str, Any]) -> None:
@@ -424,6 +434,13 @@ class EvidenceStore:
             resolved.append(docid)
         return resolved
 
+    def count_react_verify(self, claim: Any) -> int:
+        key = re.sub(r"[^a-z0-9]+", " ", str(claim or "").lower()).strip()
+        if not key:
+            return 0
+        self.react_verify_counts[key] = self.react_verify_counts.get(key, 0) + 1
+        return self.react_verify_counts[key]
+
     def _ranked_docs(self, limit: int) -> List[Dict[str, Any]]:
         def sort_key(doc: Dict[str, Any]) -> Tuple[int, float]:
             try:
@@ -486,6 +503,9 @@ class EvidenceStore:
             "key_terms": self.key_terms,
             "no_new_info_rounds": self.no_new_info_rounds,
             "verified_claims": self.verified_claims[-3:],
+            "react_verify_counts": dict(
+                sorted(self.react_verify_counts.items(), key=lambda item: item[1], reverse=True)[:10]
+            ),
         }
 
 
@@ -969,6 +989,17 @@ class DeepResearchAgent:
                 "skipped": "react_verify_tool_disabled",
                 "reason": "Use search, open_doc, or find_in_doc during research rounds.",
             }
+        if tool_name == "verify_claim" and self.config.max_react_verify_repeats > 0:
+            claim = arguments.get("claim", "")
+            verify_count = state.count_react_verify(claim)
+            if verify_count > self.config.max_react_verify_repeats:
+                return tool_name, arguments, {
+                    "claim": claim,
+                    "skipped": "duplicate_react_verify_claim",
+                    "verify_count": verify_count,
+                    "max_repeats": self.config.max_react_verify_repeats,
+                    "reason": "This claim has already been checked. Search for missing evidence or test a different candidate.",
+                }
 
         call_arguments = dict(arguments)
         recorded_arguments = dict(arguments)
