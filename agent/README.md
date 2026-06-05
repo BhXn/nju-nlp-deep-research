@@ -139,6 +139,8 @@ vllm serve ./Qwen3-8B \
   - 多轮检索 loop、停止条件、上下文压缩、证据验证
 - `agent/run_deep_research.py`
   - 批量生成符合提交格式的 `submission.jsonl`
+- `agent/fuse_deep_research_runs.py`
+  - 读取多份合法 agent 轨迹，用候选融合和证据重判生成新的 `submission.jsonl`
 - `open_track/`
   - 成功轨迹转 SFT 数据与本地模型微调脚本
 
@@ -177,3 +179,20 @@ python -m agent.eval \
 - `--prefer-heuristic-queries`：优先执行确定性拆解 query，适合作为消融项，默认关闭
 - `--enable-thinking`：允许 Qwen thinking 输出；默认关闭以提高工具调用格式稳定性
 - `--no-model-planner` / `--no-model-verifier`：关闭规划或验证 LLM 子 agent，用确定性 fallback
+
+多轨迹候选融合示例：
+
+```bash
+python -m agent.fuse_deep_research_runs \
+  --dataset browsecomp_plus_hard50.jsonl \
+  --submission v6=runs/deep_research_submission_v6_docref.jsonl \
+  --submission v8=runs/deep_research_submission_v8_repeatcap.jsonl \
+  --submission nr=runs/deep_research_submission_v7_no_react_verify.jsonl \
+  --submission broader=runs/deep_research_submission_v7_broader.jsonl \
+  --model qwen_auto \
+  --base-url http://127.0.0.1:8000/v1 \
+  --output runs/deep_research_submission_fused.jsonl
+```
+
+融合脚本只读取题目、已有 submission 的候选答案和检索证据，不读取 `eval` 结果或标准答案。
+它适合在多个合法消融 run 已经生成后使用，用一个严格 judge 重新检查候选是否满足题干约束。

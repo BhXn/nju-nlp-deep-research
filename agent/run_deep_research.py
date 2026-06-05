@@ -63,6 +63,11 @@ def parse_args() -> argparse.Namespace:
         help="Maximum repeated ReAct verify_claim calls for the same normalized claim. Use 0 to disable the cap.",
     )
     parser.add_argument(
+        "--avoid-copied-clue-answers",
+        action="store_true",
+        help="Experimental guard against final answers copied from clue values in the question.",
+    )
+    parser.add_argument(
         "--query-focused-snippet",
         action="store_true",
         help="Use query-centered search snippets instead of document-prefix snippets.",
@@ -99,6 +104,7 @@ def build_config(args: argparse.Namespace) -> ResearchConfig:
         use_model_verifier=not args.no_model_verifier,
         use_react_verify_tool=not args.no_react_verify_tool,
         max_react_verify_repeats=args.max_react_verify_repeats,
+        avoid_copied_clue_answers=args.avoid_copied_clue_answers,
         query_focused_snippet=args.query_focused_snippet,
         prefer_heuristic_queries=args.prefer_heuristic_queries,
     )

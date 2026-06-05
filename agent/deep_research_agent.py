@@ -302,6 +302,7 @@ class ResearchConfig:
     use_model_verifier: bool = True
     use_react_verify_tool: bool = True
     max_react_verify_repeats: int = 2
+    avoid_copied_clue_answers: bool = False
     query_focused_snippet: bool = False
     prefer_heuristic_queries: bool = False
 
@@ -933,7 +934,7 @@ class DeepResearchAgent:
         current = candidate
         for _ in range(self.config.verification_rounds):
             exact_answer = _extract_exact_answer(current)
-            if _answer_copied_from_question(question, exact_answer):
+            if self.config.avoid_copied_clue_answers and _answer_copied_from_question(question, exact_answer):
                 current = self._synthesize_answer(
                     question=question,
                     state=state,
