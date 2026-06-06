@@ -168,7 +168,7 @@ v10 answer-audit & 最终 answer-type 审查 & 6/50 & 12\% & 直接作为最终 
 \hline
 LoRA preliminary & 小规模 LoRA 尝试 & 2/50 & 4\% & 训练数据不足，暂不采用 \\
 \hline
-\textcolor{red}{fused v3} & \textcolor{red}{加入 audit 候选的保守融合} & \textcolor{red}{TODO} & \textcolor{red}{TODO} & \textcolor{red}{等待服务器结果} \\
+fused v3 audit candidates & 加入 audit 候选的保守融合 & 7/50 & 14\% & 接受 2 次覆盖，但未新增正确题 \\
 \hline
 \end{tabular}
 \caption{当前已完成与待完成的实验结果}
@@ -196,6 +196,7 @@ LoRA preliminary & 小规模 LoRA 尝试 & 2/50 & 4\% & 训练数据不足，暂
     \item \textbf{过强的 clue-copy guard 会退步。} v9 试图避免复制题干值，但会误伤一些本来需要重复实体或短答案的题。
     \item \textbf{非保守融合有风险。} fused v1 将已有正确答案覆盖为错误答案，说明 judge 必须以强基线保护为前提。
     \item \textbf{answer-audit 不能直接作为最终输出。} v10 的审查能提出一些有价值候选，但也会错误覆盖答案；因此更适合把 audit 结果作为融合候选，而不是直接替换最终答案。
+    \item \textbf{audit 候选融合仍未突破当前上限。} fused v3 将 answer-audit 产生的候选答案加入融合，最终仍为 14\%。本次融合接受了两个覆盖，但覆盖前后均未命中正确答案，说明仅靠已有轨迹候选重排暂时无法产生新的正确题。
 \end{enumerate}
 
 \section{Open Track 与训练计划}
@@ -260,7 +261,7 @@ python -m agent.fuse_deep_research_runs \
 \section{后续计划}
 
 \begin{enumerate}
-    \item \textcolor{red}{TODO：运行 fused v3，确认 audit 候选是否能带来新增正确题，且不丢失 v6/v8 的 7 道正确题。}
+    \item 已完成 fused v3 验证：保持 14\%，没有丢失 v6/v8 的 7 道正确题，但也没有新增正确题。
     \item \textcolor{red}{TODO：针对召回不足题，设计更强 query reformulation 和文档内定位策略。}
     \item \textcolor{red}{TODO：针对召回后抽错题，改进 answer type 审查和反向关系判断。}
     \item \textcolor{red}{TODO：如果有合法 train/dev 数据，构造无泄漏 SFT 数据并重新尝试 LoRA。}
