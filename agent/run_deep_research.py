@@ -68,6 +68,17 @@ def parse_args() -> argparse.Namespace:
         help="Experimental guard against final answers copied from clue values in the question.",
     )
     parser.add_argument(
+        "--answer-audit",
+        action="store_true",
+        help="Run a final answer-type audit before writing the exact answer.",
+    )
+    parser.add_argument(
+        "--answer-audit-min-confidence",
+        type=int,
+        default=70,
+        help="Minimum audit confidence required to override the draft answer.",
+    )
+    parser.add_argument(
         "--query-focused-snippet",
         action="store_true",
         help="Use query-centered search snippets instead of document-prefix snippets.",
@@ -105,6 +116,8 @@ def build_config(args: argparse.Namespace) -> ResearchConfig:
         use_react_verify_tool=not args.no_react_verify_tool,
         max_react_verify_repeats=args.max_react_verify_repeats,
         avoid_copied_clue_answers=args.avoid_copied_clue_answers,
+        use_answer_auditor=args.answer_audit,
+        answer_audit_min_confidence=args.answer_audit_min_confidence,
         query_focused_snippet=args.query_focused_snippet,
         prefer_heuristic_queries=args.prefer_heuristic_queries,
     )

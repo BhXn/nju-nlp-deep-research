@@ -177,8 +177,23 @@ python -m agent.eval \
 - `--planner-max-tokens` / `--tool-max-tokens` / `--answer-max-tokens` / `--verifier-max-tokens`：不同子 agent 的生成长度上限
 - `--query-focused-snippet`：改用 query 命中位置附近的搜索摘要，适合作为消融项，默认关闭
 - `--prefer-heuristic-queries`：优先执行确定性拆解 query，适合作为消融项，默认关闭
+- `--answer-audit`：最终答案写出前增加一次 answer-type 审查，主要针对证据已召回但抽错槽位的题
+- `--answer-audit-min-confidence`：审查结果覆盖原答案所需最低置信度，默认 `70`
 - `--enable-thinking`：允许 Qwen thinking 输出；默认关闭以提高工具调用格式稳定性
 - `--no-model-planner` / `--no-model-verifier`：关闭规划或验证 LLM 子 agent，用确定性 fallback
+
+answer-type 审查消融示例：
+
+```bash
+python -m agent.run_deep_research \
+  --dataset browsecomp_plus_hard50.jsonl \
+  --index-path indexes/browsecomp_plus_bm25.sqlite \
+  --model qwen_auto \
+  --base-url http://127.0.0.1:8000/v1 \
+  --answer-audit \
+  --answer-audit-min-confidence 70 \
+  --output runs/deep_research_submission_v10_answer_audit.jsonl
+```
 
 多轨迹候选融合示例：
 

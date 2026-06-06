@@ -67,6 +67,36 @@ Exact Answer: <short final answer only>
 Confidence: <0-100>%"""
 
 
+ANSWER_AUDIT_SYSTEM_PROMPT = """You are the final answer audit agent for BrowseComp-Plus.
+Use only the supplied question, evidence, and draft answer. Do not use outside knowledge.
+
+Your job is to prevent wrong-slot answers. The draft answer may be a clue value, a related entity, a verifier-supported but incomplete phrase, or an intermediate hop.
+
+Procedure:
+1. Identify the exact answer type requested by the question.
+2. List the concrete constraints that the final answer must satisfy.
+3. Judge whether the draft answer has the exact requested type and satisfies the full chain.
+4. If the evidence contains a better short answer, choose the exact evidence phrase instead.
+
+Common traps:
+- For people, return the full requested name, not only a title, role, nationality, spouse, director, supervisor, or related person.
+- For works, papers, books, songs, chapters, films, or documents, return the exact title, not the author, journal, topic, genre, or adjacent work.
+- For years, dates, streets, grades, species, countries, companies, and quantities, return that exact slot, not another clue value in the chain.
+- If two candidates are opposites or alternatives, select the one attached to the target entity in the question, not the first one mentioned in evidence.
+- Never prefer the draft answer just because a lexical verifier found overlapping words.
+
+Return strict JSON only:
+{
+  "requested_answer_type": "...",
+  "constraints": ["..."],
+  "draft_answer": "...",
+  "draft_is_valid": false,
+  "final_answer": "...",
+  "confidence": 0,
+  "explanation": "..."
+}"""
+
+
 VERIFIER_SYSTEM_PROMPT = """You are the verification agent in a multi-agent research system.
 Decide whether the candidate answer is supported by the supplied evidence.
 Return strict JSON only:
@@ -303,6 +333,8 @@ class ResearchConfig:
     use_react_verify_tool: bool = True
     max_react_verify_repeats: int = 2
     avoid_copied_clue_answers: bool = False
+    use_answer_auditor: bool = False
+    answer_audit_min_confidence: int = 70
     query_focused_snippet: bool = False
     prefer_heuristic_queries: bool = False
 
@@ -741,6 +773,13 @@ class DeepResearchAgent:
                 messages=messages,
                 state=state,
             )
+            if self.config.use_answer_auditor:
+                final_content = self._audit_final_answer(
+                    question=question,
+                    state=state,
+                    candidate=final_content,
+                    messages=messages,
+                )
             final_content = _ensure_final_format(final_content)
             messages.append({"role": "assistant", "content": final_content})
         except Exception as exc:
@@ -920,6 +959,71 @@ class DeepResearchAgent:
                 "Exact Answer: Insufficient evidence\n"
                 "Confidence: 0%"
             )
+
+    def _audit_final_answer(
+        self,
+        question: str,
+        state: EvidenceStore,
+        candidate: str,
+        messages: List[Dict[str, Any]],
+    ) -> str:
+        exact_answer = _extract_exact_answer(candidate)
+        evidence_context = state.to_context(
+            max_chars=self.config.max_context_chars,
+            max_docs=self.config.max_evidence_docs,
+        )
+        user_message = (
+            f"Original question:\n{question}\n\n"
+            f"Current draft exact answer:\n{exact_answer or '(none)'}\n\n"
+            f"Full draft response:\n{candidate or '(none)'}\n\n"
+            f"Compressed evidence state:\n{evidence_context}\n\n"
+            "Audit the draft answer and return strict JSON only."
+        )
+        try:
+            response = self.client.simple_chat(
+                model=self.model_name,
+                messages=[
+                    {"role": "system", "content": ANSWER_AUDIT_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_message},
+                ],
+                temperature=0.0,
+                max_tokens=self.config.answer_max_tokens,
+                extra_payload=_chat_extra_payload(self.model_name, self.config.disable_thinking),
+            )
+            raw_content = response["choices"][0]["message"].get("content", "")
+        except Exception:
+            return candidate
+
+        raw_content = _strip_thinking(raw_content)
+        messages.append({"role": "assistant", "content": f"Answer audit:\n{raw_content}"})
+        parsed = _extract_json_value(raw_content)
+        if not isinstance(parsed, dict):
+            return candidate
+
+        audited_answer = _clean_answer_string(str(parsed.get("final_answer") or parsed.get("answer") or ""))
+        if not audited_answer:
+            return candidate
+        normalized = _normalize_answer_for_match(audited_answer)
+        if normalized in {"unknown", "none", "insufficient evidence", "unable to determine", "not enough information"}:
+            return candidate
+
+        try:
+            confidence = int(parsed.get("confidence", 0))
+        except (TypeError, ValueError):
+            confidence = 0
+        confidence = max(0, min(100, confidence))
+        if confidence < self.config.answer_audit_min_confidence:
+            return candidate
+
+        explanation = _truncate(
+            str(parsed.get("explanation") or "Final audit selected the best answer from the evidence."),
+            700,
+        )
+        return (
+            f"Explanation: {explanation}\n"
+            f"Exact Answer: {audited_answer}\n"
+            f"Confidence: {confidence}%"
+        )
 
     def _verify_and_refine(
         self,
