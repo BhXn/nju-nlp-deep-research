@@ -279,12 +279,11 @@ def extract_from_submission(
     predicted = record.get("predicted_answer")
     add_candidate(candidates, predicted, label, "run predicted answer", weight=6)
 
-    for message in reversed(record.get("messages") or []):
+    for message in record.get("messages") or []:
         if message.get("role") == "assistant" and message.get("content"):
             content = str(message.get("content") or "")
             if re.search(r"\b(?:Exact Answer|Final Answer|Answer)\s*:", content, flags=re.IGNORECASE):
-                add_candidate(candidates, content, label, "assistant exact answer", weight=5)
-                break
+                add_candidate(candidates, content, label, "assistant exact answer", weight=4)
 
     for message in record.get("messages") or []:
         if message.get("role") == "assistant" and message.get("content"):

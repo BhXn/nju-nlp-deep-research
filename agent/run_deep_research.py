@@ -23,6 +23,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-initial-queries", type=int, default=7, help="Initial planned searches per question.")
     parser.add_argument("--top-k", type=int, default=8, help="BM25 results per search.")
     parser.add_argument("--auto-open-top-docs", type=int, default=0, help="Open top documents after initial search.")
+    parser.add_argument("--auto-find-top-docs", type=int, default=0, help="Run find_in_doc on this many top documents after initial search.")
+    parser.add_argument("--auto-find-terms-per-doc", type=int, default=0, help="Number of planned key terms to locate inside each auto-find document.")
     parser.add_argument("--max-tool-calls-per-round", type=int, default=4, help="Maximum tool calls accepted per ReAct round.")
     parser.add_argument("--max-total-tool-calls", type=int, default=36, help="Maximum total tool calls per query.")
     parser.add_argument("--max-no-new-info-rounds", type=int, default=2, help="Stop after this many no-new-info rounds.")
@@ -33,6 +35,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--planner-max-tokens", type=int, default=1024, help="Max tokens for planner calls.")
     parser.add_argument("--tool-max-tokens", type=int, default=1024, help="Max tokens for ReAct/tool-choice calls.")
     parser.add_argument("--answer-max-tokens", type=int, default=2048, help="Max tokens for answer synthesis calls.")
+    parser.add_argument("--answer-ensemble-size", type=int, default=1, help="Number of final answer synthesis variants before selector.")
+    parser.add_argument("--answer-selector-min-confidence", type=int, default=55, help="Minimum selector confidence required to replace the first final answer.")
     parser.add_argument("--verifier-max-tokens", type=int, default=1024, help="Max tokens for verifier calls.")
     parser.add_argument("--verification-rounds", type=int, default=2, help="Answer verification and refinement rounds.")
     parser.add_argument("--temperature", type=float, default=0.0, help="Agent model temperature.")
@@ -88,15 +92,41 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Run deterministic query decomposition before model-planned queries.",
     )
+    parser.add_argument(
+        "--overnight",
+        action="store_true",
+        help="Use a high-budget local-only preset intended for long unattended runs.",
+    )
     return parser.parse_args()
 
 
 def build_config(args: argparse.Namespace) -> ResearchConfig:
+    if args.overnight:
+        args.max_rounds = max(args.max_rounds, 10)
+        args.max_initial_queries = max(args.max_initial_queries, 28)
+        args.top_k = max(args.top_k, 12)
+        args.auto_open_top_docs = max(args.auto_open_top_docs, 6)
+        args.auto_find_top_docs = max(args.auto_find_top_docs, 8)
+        args.auto_find_terms_per_doc = max(args.auto_find_terms_per_doc, 10)
+        args.max_tool_calls_per_round = max(args.max_tool_calls_per_round, 6)
+        args.max_total_tool_calls = max(args.max_total_tool_calls, 120)
+        args.max_no_new_info_rounds = max(args.max_no_new_info_rounds, 4)
+        args.max_context_chars = max(args.max_context_chars, 42000)
+        args.snippet_max_chars = max(args.snippet_max_chars, 1400)
+        args.doc_max_chars = max(args.doc_max_chars, 9000)
+        args.max_evidence_docs = max(args.max_evidence_docs, 56)
+        args.answer_ensemble_size = max(args.answer_ensemble_size, 5)
+        args.answer_audit = True
+        args.query_focused_snippet = True
+        args.prefer_heuristic_queries = True
+
     return ResearchConfig(
         max_rounds=args.max_rounds,
         max_initial_queries=args.max_initial_queries,
         search_top_k=args.top_k,
         auto_open_top_docs=args.auto_open_top_docs,
+        auto_find_top_docs=args.auto_find_top_docs,
+        auto_find_terms_per_doc=args.auto_find_terms_per_doc,
         max_tool_calls_per_round=args.max_tool_calls_per_round,
         max_total_tool_calls=args.max_total_tool_calls,
         max_no_new_info_rounds=args.max_no_new_info_rounds,
@@ -107,6 +137,8 @@ def build_config(args: argparse.Namespace) -> ResearchConfig:
         planner_max_tokens=args.planner_max_tokens,
         tool_max_tokens=args.tool_max_tokens,
         answer_max_tokens=args.answer_max_tokens,
+        answer_ensemble_size=args.answer_ensemble_size,
+        answer_selector_min_confidence=args.answer_selector_min_confidence,
         verifier_max_tokens=args.verifier_max_tokens,
         verification_rounds=args.verification_rounds,
         temperature=args.temperature,

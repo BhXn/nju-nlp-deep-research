@@ -66,16 +66,21 @@ def _tokenize_text(text: str) -> List[str]:
         "before",
         "between",
         "book",
+        "born",
         "certain",
         "could",
         "first",
         "from",
         "have",
+        "individual",
         "into",
         "looking",
         "last",
         "name",
         "named",
+        "particular",
+        "please",
+        "published",
         "question",
         "research",
         "same",
@@ -84,14 +89,17 @@ def _tokenize_text(text: str) -> List[str]:
         "their",
         "there",
         "this",
+        "title",
         "university",
         "what",
         "when",
         "where",
         "which",
         "while",
+        "whose",
         "with",
         "would",
+        "written",
     }
     tokens = re.findall(r"[A-Za-z0-9][A-Za-z0-9'_-]+", text.lower())
     return [token for token in tokens if len(token) >= 4 and token not in stopwords]
@@ -130,6 +138,50 @@ def _extract_capitalized_phrases(text: str, limit: int = 10) -> List[str]:
         text,
     )
     return _ordered_unique(phrases, limit=limit)
+
+
+def _extract_single_capitalized_terms(text: str, limit: int = 12) -> List[str]:
+    terms = re.findall(r"\b[A-Z][A-Za-z'&.-]{3,}\b", text)
+    return _ordered_unique(
+        [
+            term
+            for term in terms
+            if term.lower()
+            not in {
+                "after",
+                "before",
+                "between",
+                "please",
+                "provide",
+                "question",
+                "title",
+            }
+        ],
+        limit=limit,
+    )
+
+
+def _extract_titleish_phrases(text: str, limit: int = 12) -> List[str]:
+    patterns = [
+        r"(?:book|paper|song|film|movie|chapter|document|article|novel|work)\s+(?:called|titled|named)\s+[\"“']?([^\"”'.;,?]{3,120})",
+        r"(?:title|name)\s+of\s+(?:the\s+)?(?:book|paper|song|film|movie|chapter|document|article|novel|work)\s+[\"“']?([^\"”'.;,?]{3,120})",
+        r"published\s+(?:in|between|after|before)\s+[^.?,;]{0,40}\s+(?:by|under)\s+([A-Z][^.,;?]{2,100})",
+    ]
+    phrases: List[str] = []
+    for pattern in patterns:
+        phrases.extend(match.group(1).strip() for match in re.finditer(pattern, text, flags=re.IGNORECASE))
+    return _ordered_unique(phrases, limit=limit)
+
+
+def _keyword_ngrams(tokens: List[str], min_n: int = 2, max_n: int = 5, limit: int = 24) -> List[str]:
+    grams: List[str] = []
+    for n in range(max_n, min_n - 1, -1):
+        for start in range(0, max(0, len(tokens) - n + 1)):
+            gram = tokens[start : start + n]
+            if len(set(gram)) <= 1:
+                continue
+            grams.append(" ".join(gram))
+    return _ordered_unique(grams, limit=limit)
 
 
 def _query_focused_snippet(text: str, query: str, max_chars: Optional[int]) -> str:
@@ -204,8 +256,10 @@ def _extract_distinctive_terms(question: str, limit: int = 12) -> List[str]:
     terms: List[str] = []
 
     terms.extend(_extract_quoted_phrases(question, limit=8))
+    terms.extend(_extract_titleish_phrases(question, limit=8))
     terms.extend(_extract_years(question, limit=8))
     terms.extend(_extract_capitalized_phrases(question, limit=10))
+    terms.extend(_extract_single_capitalized_terms(question, limit=8))
 
     for token in _tokenize_text(question):
         if token not in terms:
@@ -226,29 +280,45 @@ def decompose_question_heuristic(question: str, max_subquestions: int = 8) -> Di
 
     distinctive_terms = _extract_distinctive_terms(question, limit=18)
     quoted_phrases = _extract_quoted_phrases(question, limit=8)
+    titleish_phrases = _extract_titleish_phrases(question, limit=10)
     years = _extract_years(question, limit=8)
     capitalized_phrases = _extract_capitalized_phrases(question, limit=10)
-    keyword_tokens = _tokenize_text(question)[:12]
+    single_capitalized_terms = _extract_single_capitalized_terms(question, limit=12)
+    keyword_tokens = _tokenize_text(question)[:24]
+    keyword_ngrams = _keyword_ngrams(keyword_tokens, min_n=2, max_n=5, limit=28)
     subquestions = pieces[: max(1, max_subquestions)]
     search_queries: List[str] = []
 
     search_queries.extend(quoted_phrases)
+    search_queries.extend(titleish_phrases)
     search_queries.extend(capitalized_phrases)
-    search_queries.extend(distinctive_terms[: max_subquestions + 2])
+    search_queries.extend(single_capitalized_terms)
+    search_queries.extend(distinctive_terms[: max_subquestions + 8])
 
-    for anchor in _ordered_unique(quoted_phrases + capitalized_phrases, limit=6):
-        for year in years[:3]:
+    anchors = _ordered_unique(
+        quoted_phrases + titleish_phrases + capitalized_phrases + single_capitalized_terms,
+        limit=12,
+    )
+    for anchor in anchors:
+        for year in years[:5]:
             search_queries.append(f"{anchor} {year}")
-        for token in keyword_tokens[:4]:
+        for token in keyword_tokens[:8]:
             search_queries.append(f"{anchor} {token}")
 
     if years and keyword_tokens:
-        search_queries.append(" ".join(years[:2] + keyword_tokens[:5]))
+        search_queries.append(" ".join(years[:3] + keyword_tokens[:8]))
+        for gram in keyword_ngrams[:8]:
+            search_queries.append(" ".join(years[:2] + [gram]))
+
+    search_queries.extend(keyword_ngrams)
 
     for piece in subquestions:
-        terms = _extract_distinctive_terms(piece, limit=4)
+        terms = _extract_distinctive_terms(piece, limit=8)
         if terms:
             search_queries.append(" ".join(terms))
+            if len(terms) >= 5:
+                search_queries.append(" ".join(terms[:5]))
+                search_queries.append(" ".join(terms[-5:]))
         else:
             search_queries.append(piece)
 
@@ -257,7 +327,7 @@ def decompose_question_heuristic(question: str, max_subquestions: int = 8) -> Di
 
     return {
         "subquestions": subquestions,
-        "search_queries": _ordered_unique(search_queries, limit=max_subquestions + 10),
+        "search_queries": _ordered_unique(search_queries, limit=max(24, max_subquestions * 4)),
         "key_terms": distinctive_terms,
     }
 

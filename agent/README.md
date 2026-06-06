@@ -171,16 +171,20 @@ python -m agent.eval \
 - `--max-rounds`：初始检索后的 ReAct 轮数
 - `--max-initial-queries`：规划阶段生成并执行的初始检索数
 - `--top-k`：每次 BM25 检索返回文档数
+- `--auto-open-top-docs`：初始检索后自动打开若干高分文档
+- `--auto-find-top-docs` / `--auto-find-terms-per-doc`：初始检索后在高分文档内自动定位关键约束窗口
 - `--max-tool-calls-per-round` / `--max-total-tool-calls` / `--max-no-new-info-rounds`：停止条件和工具调用预算
 - `--max-context-chars` / `--max-evidence-docs`：压缩后证据上下文预算
 - `--snippet-max-chars` / `--doc-max-chars`：搜索摘要与打开文档的字符预算
 - `--planner-max-tokens` / `--tool-max-tokens` / `--answer-max-tokens` / `--verifier-max-tokens`：不同子 agent 的生成长度上限
+- `--answer-ensemble-size`：最终答案综合阶段生成多个候选并用 selector 重判
 - `--query-focused-snippet`：改用 query 命中位置附近的搜索摘要，适合作为消融项，默认关闭
 - `--prefer-heuristic-queries`：优先执行确定性拆解 query，适合作为消融项，默认关闭
 - `--answer-audit`：最终答案写出前增加一次 answer-type 审查，主要针对证据已召回但抽错槽位的题
 - `--answer-audit-min-confidence`：审查结果覆盖原答案所需最低置信度，默认 `70`
 - `--enable-thinking`：允许 Qwen thinking 输出；默认关闭以提高工具调用格式稳定性
 - `--no-model-planner` / `--no-model-verifier`：关闭规划或验证 LLM 子 agent，用确定性 fallback
+- `--overnight`：本地语料内的高预算预设，适合长时间无人值守运行
 
 answer-type 审查消融示例：
 
@@ -193,6 +197,18 @@ python -m agent.run_deep_research \
   --answer-audit \
   --answer-audit-min-confidence 70 \
   --output runs/deep_research_submission_v10_answer_audit.jsonl
+```
+
+高预算 overnight 消融示例：
+
+```bash
+python -m agent.run_deep_research \
+  --dataset browsecomp_plus_hard50.jsonl \
+  --index-path indexes/browsecomp_plus_bm25.sqlite \
+  --model qwen_auto \
+  --base-url http://127.0.0.1:8000/v1 \
+  --overnight \
+  --output runs/deep_research_submission_v11_overnight.jsonl
 ```
 
 多轨迹候选融合示例：
