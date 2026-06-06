@@ -1,0 +1,274 @@
+\documentclass[a4paper]{article}
+\usepackage[inner=2.0cm,outer=2.0cm,top=2.5cm,bottom=2.5cm]{geometry}
+\usepackage[fontset=fandol]{ctex}
+\usepackage{color}
+\usepackage{graphicx}
+\usepackage{amssymb}
+\usepackage{amsmath}
+\usepackage{amsthm}
+\usepackage{bm}
+\usepackage{multirow}
+\usepackage{mathtools}
+\usepackage{enumerate}
+\usepackage{tikz}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usetikzlibrary{automata,positioning,arrows}
+
+
+\newcommand{\homework}[5]{
+    \pagestyle{myheadings}
+    \thispagestyle{plain}
+    \newpage
+    \setcounter{page}{1}
+    \noindent
+    \begin{center}
+    \framebox{
+        \vbox{\vspace{2mm}
+        \hbox to 6.28in { {\bf 自然语言处理 \hfill #2} }
+        \vspace{6mm}
+        \hbox to 6.28in { {\Large \hfill #1 \hfill} }
+        \vspace{6mm}
+        \hbox to 6.28in { {\it Instructor: {\rm #3} \hfill Name: {\rm #4}, StudentId: {\rm #5}}}
+        \vspace{2mm}}
+    }
+    \end{center}
+    \vspace*{4mm}
+}
+
+% =========以上内容无需修改变动=========
+
+\newenvironment{solution}
+{\color{blue} \paragraph{Solution.}}
+{\newline \qed}
+
+\begin{document}
+% =========这里改成自己的名字和学号=========
+% 样例，名字用中文填写
+% \homework{Homework 1}{Fall 2024}{Lijun Zhang}{张三}{111220001}
+\homework{Report}{Spring 2026}{Zheng Wu}{赵旭令(AI院系)}{231300088}
+
+\section{任务概述}
+
+本实验要求在课程提供的 BrowseComp-Plus 本地语料和 BM25 检索器基础上，实现一个能够进行多轮检索、维护中间状态、压缩上下文并基于证据输出最终答案的 Deep Research Agent。实验约束包括：不替换课程提供的检索器，不使用 Google/Bing 等外部检索服务，不引入额外外部知识库；模型侧通过本地 vLLM OpenAI-compatible 接口调用。
+
+当前实现主要围绕以下目标展开：
+
+\begin{enumerate}
+    \item 实现多轮检索 loop，并设置明确停止条件。
+    \item 将问题分解、检索执行、答案综合、答案验证拆成相对独立的子模块。
+    \item 在有限上下文窗口内维护检索历史、证据文档、验证记录和待验证子目标。
+    \item 对不同 agent 配置进行消融实验，并分析错误来源。
+    \item 为 Open Track 预留合法的 SFT/LoRA 训练流程，但不使用测试集答案或评测结果构造训练数据。
+\end{enumerate}
+
+\section{方法设计}
+
+\subsection{整体架构}
+
+本项目实现的主 agent 位于 \verb|agent/deep_research_agent.py|。整体结构由四个阶段组成：
+
+\begin{enumerate}
+    \item \textbf{Planner}：将原始复杂问题拆解为子问题、关键词、初始搜索 query 和需要验证的约束。
+    \item \textbf{Search Executor}：执行初始检索和 ReAct 过程中的工具调用，并记录工具轨迹。
+    \item \textbf{Evidence Store}：维护已执行搜索、已召回文档、打开文档内容、关键词窗口、验证记录和去重信息。
+    \item \textbf{Answer Synthesizer / Verifier}：根据压缩证据综合最终答案，并用验证器检查候选答案是否被证据支持。
+\end{enumerate}
+
+运行入口为 \verb|agent/run_deep_research.py|。该脚本批量读取数据集，调用 agent，并输出符合提交格式的 JSONL 轨迹文件。
+
+\subsection{工具设计}
+
+在课程原始搜索工具基础上，当前实现扩展了以下本地工具：
+
+\begin{enumerate}
+    \item \verb|decompose_question|：确定性问题拆解 fallback，用于生成初始搜索 query。
+    \item \verb|search|：调用本地 BrowseComp-Plus BM25 索引，返回 docid、分数、URL 和摘要。
+    \item \verb|open_doc|：根据 docid 打开较长文档片段。
+    \item \verb|find_in_doc|：在指定文档中按关键词定位窗口。
+    \item \verb|verify_claim|：对候选答案或中间声明进行本地词面验证，辅助发现明显 unsupported 的候选。
+\end{enumerate}
+
+所有工具均使用本地语料和本地索引，不访问外部互联网。
+
+\subsection{状态管理与停止条件}
+
+为了避免模型在多轮检索中反复搜索同一 query 或重复验证同一 claim，\verb|EvidenceStore| 维护了如下状态：
+
+\begin{enumerate}
+    \item 已执行 query 集合，用于跳过重复搜索。
+    \item 已召回文档集合，用于统计新信息量。
+    \item 文档详情和关键词窗口，用于构造压缩证据上下文。
+    \item 验证历史和 ReAct 验证计数，用于限制重复验证。
+\end{enumerate}
+
+主要停止条件包括最大 ReAct 轮数、最大总工具调用数、连续无新文档轮数和模型直接给出最终答案。当前常用默认参数为：最大 ReAct 轮数 6，初始 query 数 7，每次检索 top-8，总工具调用预算 36。
+
+\subsection{答案综合与验证}
+
+答案综合 prompt 明确要求先判断题目需要的 answer type，再输出短答案，避免输出解释、引用、角色名或中间线索。验证阶段调用 LLM verifier，要求只有证据直接支持 exact answer 时才给出 supported。后续实验发现，词面验证和 LLM verifier 仍可能把错误槽位答案判为 supported，因此额外实现了可选的 \verb|--answer-audit| 消融，用于在最终写出前再次检查 answer type 和约束链。
+
+\subsection{候选融合}
+
+除单次 agent run 外，本项目还实现了 \verb|agent/fuse_deep_research_runs.py|。该脚本读取多个合法 agent 轨迹，抽取候选答案和证据片段，再调用本地模型作为 judge 进行重判。融合策略是保守的：指定一个 base run，默认保留 base answer；只有当 judge 给出足够高置信度、候选分数优势和证据支持时，才允许覆盖 base answer。该设计用于避免多轨迹融合把当前已知正确答案改错。
+
+需要强调的是，融合脚本只读取题目、已有 submission 轨迹、工具输出和模型自身产生的候选，不读取 \verb|eval| 文件中的标准答案或评测标签。
+
+\section{实验设置}
+
+\subsection{模型与服务}
+
+主要实验使用 Qwen3-8B，通过 vLLM 启动 OpenAI-compatible 服务：
+
+\begin{verbatim}
+vllm serve ./Qwen3-8B \
+  --served-model-name qwen_auto \
+  --enable-auto-tool-choice \
+  --tool-call-parser hermes \
+  --trust-remote-code \
+  --host 0.0.0.0 \
+  --port 8000
+\end{verbatim}
+
+agent 侧通过 \verb|http://127.0.0.1:8000/v1| 访问模型服务。默认关闭 Qwen thinking 输出，以提高工具调用格式稳定性。
+
+\subsection{数据与评估}
+
+当前已完成实验主要在 \verb|browsecomp_plus_hard50.jsonl| 上进行诊断。评估使用课程提供的 \verb|agent/eval.py|，由本地模型判断预测答案与标准答案是否语义等价。
+
+需要说明的是，\verb|hard50| 在本项目中仅作为调试和诊断集合使用。不会用其标准答案、评测结果或 query-level 正误标签构造训练数据、硬编码规则或选择最终答案。
+
+\section{已完成实验结果}
+
+表 \ref{tab:results} 总结了目前已完成的主要 run。由于部分实验是在不同阶段代码上运行，表中按实验目的保留关键结果。
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|l|c|c|c|}
+\hline
+实验版本 & 主要配置 & 正确数 & 准确率 & 备注 \\
+\hline
+early baseline & 初始多轮 agent & 3/50 & 6\% & 工具调用多，但答案槽位错误严重 \\
+\hline
+v5 stable & 稳定检索配置 & 6/50 & 12\% & 回到较稳定主线 \\
+\hline
+v6 docref & docid 引用修正与证据压缩 & 7/50 & 14\% & 当前单 run 最优之一 \\
+\hline
+v7 broader & 更宽检索预算 & 6/50 & 12\% & 召回更多但噪声上升 \\
+\hline
+v8 repeatcap & 限制重复 verify & 7/50 & 14\% & 与 v6 持平，减少重复验证 \\
+\hline
+v9 avoid clues & 避免复制题干线索 & 6/50 & 12\% & 作为默认策略过强，已关闭 \\
+\hline
+fused v1 & 非保守候选融合 & 6/50 & 12\% & judge 覆盖过激，改错已有正确题 \\
+\hline
+fused v2 conservative & 保守融合，base=v6 & 7/50 & 14\% & 不退步，但未新增正确题 \\
+\hline
+v10 answer-audit & 最终 answer-type 审查 & 6/50 & 12\% & 直接作为最终 run 会退步 \\
+\hline
+LoRA preliminary & 小规模 LoRA 尝试 & 2/50 & 4\% & 训练数据不足，暂不采用 \\
+\hline
+\textcolor{red}{fused v3} & \textcolor{red}{加入 audit 候选的保守融合} & \textcolor{red}{TODO} & \textcolor{red}{TODO} & \textcolor{red}{等待服务器结果} \\
+\hline
+\end{tabular}
+\caption{当前已完成与待完成的实验结果}
+\label{tab:results}
+\end{table}
+
+\section{错误分析}
+
+\subsection{总体观察}
+
+目前最佳准确率为 14\%。从多次分析结果看，错误主要分为两类：
+
+\begin{enumerate}
+    \item \textbf{召回不足}：标准答案对应证据未出现在工具输出中，说明 query reformulation 和文档定位仍不足。
+    \item \textbf{召回后抽错}：标准答案或关键证据已经出现在工具输出中，但最终答案抽成了中间实体、相关人物、相邻作品、年份或反向关系。
+\end{enumerate}
+
+第二类错误尤其重要，因为它表明当前瓶颈不只是 BM25 召回，而是多跳约束绑定和 answer type 对齐不足。v6/v8 分析中均出现约 9--10 道 ``gold appeared in tool output but final answer was wrong'' 的样例。这类题说明模型已经接触到相关证据，但综合阶段没有严格回到题干询问的槽位。
+
+\subsection{消融结论}
+
+\begin{enumerate}
+    \item \textbf{扩大检索预算不一定有效。} v7 broader 召回文档数上升，但准确率从 14\% 降到 12\%，说明更多证据会增加干扰。
+    \item \textbf{重复 verify 限制是稳定改进。} v8 与 v6 持平，同时减少无效重复验证，有利于控制工具预算。
+    \item \textbf{过强的 clue-copy guard 会退步。} v9 试图避免复制题干值，但会误伤一些本来需要重复实体或短答案的题。
+    \item \textbf{非保守融合有风险。} fused v1 将已有正确答案覆盖为错误答案，说明 judge 必须以强基线保护为前提。
+    \item \textbf{answer-audit 不能直接作为最终输出。} v10 的审查能提出一些有价值候选，但也会错误覆盖答案；因此更适合把 audit 结果作为融合候选，而不是直接替换最终答案。
+\end{enumerate}
+
+\section{Open Track 与训练计划}
+
+当前已实现 Open Track 相关代码：
+
+\begin{enumerate}
+    \item \verb|open_track/build_sft_data.py|：将成功轨迹转换为 SFT 数据。
+    \item \verb|open_track/merge_sft_data.py|：合并多个合法开发集 run 的 SFT 数据。
+    \item \verb|open_track/train.py|：基于本地模型路径进行 LoRA 或全量微调。
+    \item \verb|open_track/merge_lora.py|：将 LoRA adapter 合并回 base model，便于 vLLM 服务部署。
+\end{enumerate}
+
+为了避免数据泄漏，当前版本已经强制要求构造 SFT 数据时声明 \verb|--source-split train| 或 \verb|--source-split dev|。如果声明 \verb|--source-split test|，脚本会直接拒绝运行。后续如果进行训练，只能使用合法 train/dev 轨迹，不能使用 \verb|hard50| 或最终测试集的答案、评测标签和按题筛选结果。
+
+\textcolor{red}{TODO：补充合法训练/开发集来源、SFT 样本数量、LoRA 超参数、训练 loss 曲线和训练后评估结果。}
+
+\section{复现命令}
+
+\subsection{主线 agent}
+
+\begin{verbatim}
+python -m agent.run_deep_research \
+  --dataset browsecomp_plus_hard50.jsonl \
+  --index-path indexes/browsecomp_plus_bm25.sqlite \
+  --model qwen_auto \
+  --base-url http://127.0.0.1:8000/v1 \
+  --output runs/deep_research_submission.jsonl
+\end{verbatim}
+
+\subsection{评估}
+
+\begin{verbatim}
+python -m agent.eval \
+  --submission runs/deep_research_submission.jsonl \
+  --dataset browsecomp_plus_hard50.jsonl \
+  --model qwen_auto \
+  --base-url http://127.0.0.1:8000/v1 \
+  --output runs/deep_research_eval.jsonl
+\end{verbatim}
+
+\subsection{保守融合}
+
+\begin{verbatim}
+python -m agent.fuse_deep_research_runs \
+  --dataset browsecomp_plus_hard50.jsonl \
+  --submission v6=runs/deep_research_submission_v6_docref.jsonl \
+  --submission v8=runs/deep_research_submission_v8_repeatcap.jsonl \
+  --submission v10=runs/deep_research_submission_v10_answer_audit.jsonl \
+  --submission nr=runs/deep_research_submission_v7_no_react_verify.jsonl \
+  --submission broader=runs/deep_research_submission_v7_broader.jsonl \
+  --base-label v6 \
+  --override-confidence 80 \
+  --override-score-margin 10 \
+  --protected-base-extra-confidence 5 \
+  --protected-base-extra-margin 10 \
+  --model qwen_auto \
+  --base-url http://127.0.0.1:8000/v1 \
+  --output runs/deep_research_submission_fused_v3_audit_candidates.jsonl
+\end{verbatim}
+
+\section{后续计划}
+
+\begin{enumerate}
+    \item \textcolor{red}{TODO：运行 fused v3，确认 audit 候选是否能带来新增正确题，且不丢失 v6/v8 的 7 道正确题。}
+    \item \textcolor{red}{TODO：针对召回不足题，设计更强 query reformulation 和文档内定位策略。}
+    \item \textcolor{red}{TODO：针对召回后抽错题，改进 answer type 审查和反向关系判断。}
+    \item \textcolor{red}{TODO：如果有合法 train/dev 数据，构造无泄漏 SFT 数据并重新尝试 LoRA。}
+    \item \textcolor{red}{TODO：补充最终提交文件名、最终得分、Open Track bonus 说明。}
+\end{enumerate}
+
+\section{当前结论}
+
+目前实现已经完成了课程要求中的多轮检索、停止条件、历史与上下文管理、prompt 设计和基于证据的最终回答；同时实现了候选融合、答案审查和 Open Track 训练脚本。当前最佳诊断准确率为 14\%，主要瓶颈是复杂多跳问题中证据召回不足和答案槽位抽取错误。下一步将优先改进保守融合和 answer-type 对齐，而不是直接扩大检索预算或在测试集上进行训练。
+
+\end{document}
