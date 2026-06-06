@@ -16,6 +16,7 @@ FUSION_SYSTEM_PROMPT = """You are a strict evidence judge for BrowseComp-Plus.
 You will receive one hard question, candidate answers from several legal local-agent runs, and evidence snippets retrieved from the local BrowseComp-Plus corpus.
 
 Your job is to choose the best final answer using only the supplied evidence. Do not use outside knowledge.
+One candidate is marked as the base answer from the strongest available run. Treat it as the default answer.
 
 Rules:
 - First identify the exact answer type requested by the question.
@@ -23,6 +24,8 @@ Rules:
 - Penalize answers that are only clue values, related entities, titles from a different hop, or the wrong answer type.
 - Treat previous run predictions and verifier verdicts as untrusted hints, not proof.
 - Prefer a candidate supported by direct evidence over a frequent candidate.
+- Keep the base answer unless another answer has clearly stronger evidence, satisfies more constraints, and does not conflict with the question's requested answer type.
+- Overriding the base answer requires direct support and an explicit reason why the base answer fails one or more question constraints.
 - If every listed candidate is wrong but the evidence clearly contains a better answer, you may choose a short answer copied exactly from the evidence.
 - If evidence is incomplete, choose the best-supported short answer rather than refusing by default.
 
@@ -65,6 +68,46 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--snippet-chars", type=int, default=700, help="Characters retained per evidence snippet/window.")
     parser.add_argument("--judge-max-tokens", type=int, default=1536, help="Max tokens for the judge response.")
     parser.add_argument("--temperature", type=float, default=0.0, help="Judge model temperature.")
+    parser.add_argument(
+        "--base-label",
+        default=None,
+        help="Label of the run whose answer is kept by default. Defaults to the first --submission label.",
+    )
+    parser.add_argument(
+        "--override-confidence",
+        type=int,
+        default=85,
+        help="Minimum judge confidence required to override a usable base answer.",
+    )
+    parser.add_argument(
+        "--override-score-margin",
+        type=int,
+        default=20,
+        help="Minimum candidate score margin required to override a usable base answer.",
+    )
+    parser.add_argument(
+        "--allow-unsupported-override",
+        action="store_true",
+        help="Allow overrides even when the judge does not cite supporting docids for the chosen answer.",
+    )
+    parser.add_argument(
+        "--protected-base-votes",
+        type=int,
+        default=2,
+        help="Treat the base as consensus-protected when this many source runs predicted it.",
+    )
+    parser.add_argument(
+        "--protected-base-extra-confidence",
+        type=int,
+        default=10,
+        help="Additional confidence required to override a protected base answer.",
+    )
+    parser.add_argument(
+        "--protected-base-extra-margin",
+        type=int,
+        default=20,
+        help="Additional score margin required to override a protected base answer.",
+    )
     parser.add_argument("--enable-thinking", action="store_true", help="Allow Qwen thinking output.")
     parser.add_argument("--start", type=int, default=0, help="Dataset start offset.")
     parser.add_argument("--limit", type=int, default=None, help="Optional number of examples.")
@@ -96,6 +139,31 @@ def load_submission(spec: str) -> Tuple[str, Dict[str, Dict[str, Any]]]:
         label = Path(path_text).stem
     rows = {query_id(row): row for row in load_jsonl(path_text)}
     return label, rows
+
+
+def source_prediction(record: Optional[Dict[str, Any]]) -> str:
+    if not record:
+        return ""
+    answer = _extract_exact_answer(str(record.get("predicted_answer") or ""))
+    return compact(answer, 220).strip(" .")
+
+
+def choose_base_answer(
+    base_label: str,
+    source_runs: List[Tuple[str, Dict[str, Dict[str, Any]]]],
+    qid: str,
+    candidates: List[Dict[str, Any]],
+) -> str:
+    for label, records in source_runs:
+        if label != base_label:
+            continue
+        answer = source_prediction(records.get(qid))
+        if answer and not is_bad_candidate(answer):
+            return answer
+        break
+    if candidates:
+        return candidates[0]["answer"]
+    return "Insufficient evidence"
 
 
 def parse_tool_call_names(messages: Iterable[Dict[str, Any]]) -> Dict[str, Tuple[str, Dict[str, Any]]]:
@@ -375,10 +443,32 @@ def format_candidates(candidates: List[Dict[str, Any]]) -> str:
     return "\n".join(lines) or "(no usable candidates)"
 
 
-def build_user_message(question: str, candidates: List[Dict[str, Any]], evidence_context: str, verifier_notes: List[str]) -> str:
+def prediction_vote_count(answer: str, candidates: List[Dict[str, Any]]) -> int:
+    answer_key = normalize(answer)
+    voters = set()
+    if not answer_key:
+        return 0
+    for candidate in candidates:
+        if normalize(candidate.get("answer")) != answer_key:
+            continue
+        for source in candidate.get("sources") or []:
+            if source.get("reason") == "run predicted answer":
+                voters.add(source.get("source"))
+    return len(voters)
+
+
+def build_user_message(
+    question: str,
+    base_label: str,
+    base_answer: str,
+    candidates: List[Dict[str, Any]],
+    evidence_context: str,
+    verifier_notes: List[str],
+) -> str:
     verifier_section = "\n".join(verifier_notes[:20])
     return (
         f"Question:\n{question}\n\n"
+        f"Base answer to keep unless clearly beaten:\n[{base_label}] {base_answer}\n\n"
         f"Candidate answers from prior legal runs:\n{format_candidates(candidates)}\n\n"
         "Prior verifier notes are untrusted hints only:\n"
         f"{verifier_section or '(none)'}\n\n"
@@ -400,14 +490,185 @@ def final_answer_from_judgment(judgment: Dict[str, Any], fallback: str) -> str:
     return compact(answer, 220).strip(" .") or fallback
 
 
-def final_content(answer: str, judgment: Dict[str, Any], fallback_confidence: int = 50) -> str:
-    explanation = compact(judgment.get("explanation") or "Selected by candidate fusion over prior run evidence.", 700)
+def judge_confidence(judgment: Dict[str, Any], fallback: int = 0) -> int:
     try:
-        confidence = int(judgment.get("confidence", fallback_confidence))
+        confidence = int(judgment.get("confidence", fallback))
     except (TypeError, ValueError):
-        confidence = fallback_confidence
-    confidence = max(0, min(100, confidence))
-    return f"Explanation: {explanation}\nExact Answer: {answer}\nConfidence: {confidence}%"
+        confidence = fallback
+    return max(0, min(100, confidence))
+
+
+def matching_candidate_judgments(judgment: Dict[str, Any], answer: str) -> List[Dict[str, Any]]:
+    answer_key = normalize(answer)
+    matches: List[Dict[str, Any]] = []
+    if not answer_key:
+        return matches
+    for item in judgment.get("candidate_judgments") or []:
+        if not isinstance(item, dict):
+            continue
+        item_key = normalize(item.get("answer"))
+        if item_key == answer_key:
+            matches.append(item)
+    return matches
+
+
+def judgment_score(judgment: Dict[str, Any], answer: str) -> int:
+    scores: List[int] = []
+    for item in matching_candidate_judgments(judgment, answer):
+        try:
+            scores.append(int(item.get("score", 0)))
+        except (TypeError, ValueError):
+            scores.append(0)
+    return max(scores) if scores else 0
+
+
+def has_supporting_docids(judgment: Dict[str, Any], answer: str) -> bool:
+    for item in matching_candidate_judgments(judgment, answer):
+        docids = [str(docid).strip() for docid in item.get("supporting_docids") or []]
+        if any(docids):
+            return True
+    return False
+
+
+def apply_conservative_override(
+    *,
+    base_answer: str,
+    judged_answer: str,
+    judgment: Dict[str, Any],
+    base_prediction_votes: int,
+    judged_prediction_votes: int,
+    override_confidence: int,
+    override_score_margin: int,
+    allow_unsupported_override: bool,
+    protected_base_votes: int,
+    protected_base_extra_confidence: int,
+    protected_base_extra_margin: int,
+) -> Tuple[str, Dict[str, Any]]:
+    if normalize(judged_answer) == normalize(base_answer):
+        return judged_answer, {
+            "action": "accepted_base",
+            "reason": "judge selected the base answer",
+            "base_answer": base_answer,
+            "judged_answer": judged_answer,
+        }
+
+    if is_bad_candidate(base_answer):
+        return judged_answer, {
+            "action": "accepted_override",
+            "reason": "base answer was unusable",
+            "base_answer": base_answer,
+            "judged_answer": judged_answer,
+        }
+
+    confidence = judge_confidence(judgment)
+    base_score = judgment_score(judgment, base_answer)
+    judged_score = judgment_score(judgment, judged_answer)
+    score_margin = judged_score - base_score
+    supported = has_supporting_docids(judgment, judged_answer)
+    effective_confidence = override_confidence
+    effective_margin = override_score_margin
+    trusted_base_protected = base_prediction_votes > 0
+    consensus_protected = base_prediction_votes >= protected_base_votes and judged_prediction_votes < base_prediction_votes
+    base_protected = trusted_base_protected or consensus_protected
+    if base_protected:
+        effective_confidence += protected_base_extra_confidence
+        effective_margin += protected_base_extra_margin
+
+    if confidence < effective_confidence:
+        return base_answer, {
+            "action": "kept_base",
+            "reason": "override confidence below threshold",
+            "base_answer": base_answer,
+            "judged_answer": judged_answer,
+            "confidence": confidence,
+            "required_confidence": effective_confidence,
+            "base_score": base_score,
+            "judged_score": judged_score,
+            "score_margin": score_margin,
+            "base_prediction_votes": base_prediction_votes,
+            "judged_prediction_votes": judged_prediction_votes,
+            "trusted_base_protected": trusted_base_protected,
+            "consensus_protected": consensus_protected,
+            "base_protected": base_protected,
+        }
+
+    if score_margin < effective_margin:
+        return base_answer, {
+            "action": "kept_base",
+            "reason": "override score margin below threshold",
+            "base_answer": base_answer,
+            "judged_answer": judged_answer,
+            "confidence": confidence,
+            "base_score": base_score,
+            "judged_score": judged_score,
+            "score_margin": score_margin,
+            "required_score_margin": effective_margin,
+            "base_prediction_votes": base_prediction_votes,
+            "judged_prediction_votes": judged_prediction_votes,
+            "trusted_base_protected": trusted_base_protected,
+            "consensus_protected": consensus_protected,
+            "base_protected": base_protected,
+        }
+
+    if not supported and not allow_unsupported_override:
+        return base_answer, {
+            "action": "kept_base",
+            "reason": "override did not cite supporting docids",
+            "base_answer": base_answer,
+            "judged_answer": judged_answer,
+            "confidence": confidence,
+            "base_score": base_score,
+            "judged_score": judged_score,
+            "score_margin": score_margin,
+            "base_prediction_votes": base_prediction_votes,
+            "judged_prediction_votes": judged_prediction_votes,
+            "trusted_base_protected": trusted_base_protected,
+            "consensus_protected": consensus_protected,
+            "base_protected": base_protected,
+        }
+
+    return judged_answer, {
+        "action": "accepted_override",
+        "reason": "override cleared conservative thresholds",
+        "base_answer": base_answer,
+        "judged_answer": judged_answer,
+        "confidence": confidence,
+        "base_score": base_score,
+        "judged_score": judged_score,
+        "score_margin": score_margin,
+        "supported": supported,
+        "base_prediction_votes": base_prediction_votes,
+        "judged_prediction_votes": judged_prediction_votes,
+        "trusted_base_protected": trusted_base_protected,
+        "consensus_protected": consensus_protected,
+        "base_protected": base_protected,
+    }
+
+
+def final_content(
+    answer: str,
+    judgment: Dict[str, Any],
+    fusion_decision: Dict[str, Any],
+    fallback_confidence: int = 50,
+) -> str:
+    judge_explanation = compact(
+        judgment.get("explanation") or "Selected by candidate fusion over prior run evidence.",
+        520,
+    )
+    action = fusion_decision.get("action")
+    reason = fusion_decision.get("reason")
+    if action == "kept_base":
+        explanation = (
+            f"Kept the base answer because {reason}. "
+            f"The judge proposed {fusion_decision.get('judged_answer')!r}, but it did not clear conservative override gates. "
+            f"Judge note: {judge_explanation}"
+        )
+    elif action == "accepted_override":
+        explanation = f"Accepted the judge override because {reason}. Judge note: {judge_explanation}"
+    else:
+        explanation = judge_explanation
+    confidence = judge_confidence(judgment, fallback=fallback_confidence)
+    return f"Explanation: {compact(explanation, 700)}\nExact Answer: {answer}\nConfidence: {confidence}%"
 
 
 def iter_dataset(dataset_path: str, start: int, limit: Optional[int]) -> List[Dict[str, Any]]:
@@ -422,6 +683,10 @@ def iter_dataset(dataset_path: str, start: int, limit: Optional[int]) -> List[Di
 def main() -> None:
     args = parse_args()
     source_runs = [load_submission(spec) for spec in args.submission]
+    source_labels = [label for label, _ in source_runs]
+    base_label = args.base_label or source_labels[0]
+    if base_label not in source_labels:
+        raise ValueError(f"--base-label must be one of {source_labels}, got {base_label!r}")
     client = None if args.dry_run else VLLMClient(base_url=args.base_url, api_key=args.api_key)
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -452,9 +717,17 @@ def main() -> None:
                 source_metadata[label] = metadata.get("metadata")
 
             candidates = merge_candidates(candidate_maps, max_candidates=args.max_candidates)
-            fallback = candidates[0]["answer"] if candidates else "Insufficient evidence"
+            base_answer = choose_base_answer(base_label, source_runs, qid, candidates)
+            fallback = base_answer
             evidence_context = merge_evidence(evidence_lists, max_evidence_chars=args.max_evidence_chars)
-            user_message = build_user_message(question, candidates, evidence_context, verifier_notes)
+            user_message = build_user_message(
+                question,
+                base_label,
+                base_answer,
+                candidates,
+                evidence_context,
+                verifier_notes,
+            )
 
             if args.dry_run:
                 judgment = {
@@ -478,8 +751,23 @@ def main() -> None:
                 raw_judge = _strip_thinking(response["choices"][0]["message"].get("content", ""))
                 judgment = parse_judge_response(raw_judge)
 
-            answer = final_answer_from_judgment(judgment, fallback=fallback)
-            content = final_content(answer, judgment)
+            judged_answer = final_answer_from_judgment(judgment, fallback=fallback)
+            base_prediction_votes = prediction_vote_count(base_answer, candidates)
+            judged_prediction_votes = prediction_vote_count(judged_answer, candidates)
+            answer, fusion_decision = apply_conservative_override(
+                base_answer=base_answer,
+                judged_answer=judged_answer,
+                judgment=judgment,
+                base_prediction_votes=base_prediction_votes,
+                judged_prediction_votes=judged_prediction_votes,
+                override_confidence=args.override_confidence,
+                override_score_margin=args.override_score_margin,
+                allow_unsupported_override=args.allow_unsupported_override,
+                protected_base_votes=args.protected_base_votes,
+                protected_base_extra_confidence=args.protected_base_extra_confidence,
+                protected_base_extra_margin=args.protected_base_extra_margin,
+            )
+            content = final_content(answer, judgment, fusion_decision)
             record = {
                 "query_id": qid,
                 "status": "fused_dry_run" if args.dry_run else "fused",
@@ -493,8 +781,11 @@ def main() -> None:
                 "state_summary": {
                     "source_runs": list(source_metadata.keys()),
                     "source_metadata": source_metadata,
+                    "base_label": base_label,
+                    "base_answer": base_answer,
                     "candidates": candidates,
                     "judge": judgment,
+                    "fusion_decision": fusion_decision,
                 },
                 "current_subgoal": "candidate_fusion",
                 "next_action_plan": "completed",

@@ -189,6 +189,9 @@ python -m agent.fuse_deep_research_runs \
   --submission v8=runs/deep_research_submission_v8_repeatcap.jsonl \
   --submission nr=runs/deep_research_submission_v7_no_react_verify.jsonl \
   --submission broader=runs/deep_research_submission_v7_broader.jsonl \
+  --base-label v6 \
+  --override-confidence 85 \
+  --override-score-margin 20 \
   --model qwen_auto \
   --base-url http://127.0.0.1:8000/v1 \
   --output runs/deep_research_submission_fused.jsonl
@@ -196,3 +199,6 @@ python -m agent.fuse_deep_research_runs \
 
 融合脚本只读取题目、已有 submission 的候选答案和检索证据，不读取 `eval` 结果或标准答案。
 它适合在多个合法消融 run 已经生成后使用，用一个严格 judge 重新检查候选是否满足题干约束。
+默认策略是保守融合：保留 `--base-label` 指定 run 的答案，只有 judge 的置信度、候选分数差距和
+证据 docid 都满足阈值时才覆盖。对于基线 run 自己给出的答案，脚本还会额外提高覆盖门槛，
+这样优先避免把当前最强单次运行里的正确答案改错。
