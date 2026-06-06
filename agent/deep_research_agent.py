@@ -687,10 +687,12 @@ class VerificationAgent:
         if verdict not in {"supported", "unsupported", "uncertain"}:
             verdict = "uncertain"
         try:
-            confidence = int(parsed.get("confidence", 0))
+            confidence_value = float(parsed.get("confidence", 0))
         except (TypeError, ValueError):
-            confidence = 0
-        confidence = max(0, min(100, confidence))
+            confidence_value = 0
+        if 0 < confidence_value <= 1:
+            confidence_value *= 100
+        confidence = max(0, min(100, int(round(confidence_value))))
         if verdict == "supported" and confidence < 60:
             verdict = "uncertain"
         return {
@@ -1008,10 +1010,12 @@ class DeepResearchAgent:
             return candidate
 
         try:
-            confidence = int(parsed.get("confidence", 0))
+            confidence_value = float(parsed.get("confidence", 0))
         except (TypeError, ValueError):
-            confidence = 0
-        confidence = max(0, min(100, confidence))
+            confidence_value = 0
+        if 0 < confidence_value <= 1:
+            confidence_value *= 100
+        confidence = max(0, min(100, int(round(confidence_value))))
         if confidence < self.config.answer_audit_min_confidence:
             return candidate
 

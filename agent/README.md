@@ -202,6 +202,7 @@ python -m agent.fuse_deep_research_runs \
   --dataset browsecomp_plus_hard50.jsonl \
   --submission v6=runs/deep_research_submission_v6_docref.jsonl \
   --submission v8=runs/deep_research_submission_v8_repeatcap.jsonl \
+  --submission v10=runs/deep_research_submission_v10_answer_audit.jsonl \
   --submission nr=runs/deep_research_submission_v7_no_react_verify.jsonl \
   --submission broader=runs/deep_research_submission_v7_broader.jsonl \
   --base-label v6 \

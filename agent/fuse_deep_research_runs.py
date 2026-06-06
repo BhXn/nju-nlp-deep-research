@@ -126,6 +126,16 @@ def normalize(text: Any) -> str:
     return re.sub(r"[^a-z0-9]+", " ", str(text or "").lower()).strip()
 
 
+def parse_confidence(value: Any, fallback: int = 0) -> int:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        parsed = float(fallback)
+    if 0 < parsed <= 1:
+        parsed *= 100
+    return max(0, min(100, int(round(parsed))))
+
+
 def query_id(row: Dict[str, Any]) -> str:
     return str(row.get("query_id") or row.get("id") or row.get("qid") or row.get("question_id") or "")
 
@@ -236,6 +246,26 @@ def maybe_add_short_claim(candidates: Dict[str, Dict[str, Any]], claim: Any, sou
         add_candidate(candidates, text, source, "short verify claim", weight=3)
 
 
+def maybe_add_assistant_json_candidate(candidates: Dict[str, Dict[str, Any]], content: str, source: str) -> None:
+    parsed = _extract_json_value(content)
+    if not isinstance(parsed, dict):
+        return
+    answer = parsed.get("final_answer") or parsed.get("exact_answer") or parsed.get("answer")
+    if not answer:
+        return
+    reason = "assistant json final answer"
+    weight = 3
+    if content.lstrip().startswith("Answer audit"):
+        reason = "answer audit final answer"
+        weight = 12
+    confidence = parse_confidence(parsed.get("confidence", 0))
+    if confidence >= 80:
+        weight += 2
+    elif confidence >= 50:
+        weight += 1
+    add_candidate(candidates, answer, source, f"{reason} confidence={confidence}", weight=weight)
+
+
 def extract_from_submission(
     label: str,
     record: Dict[str, Any],
@@ -255,6 +285,10 @@ def extract_from_submission(
             if re.search(r"\b(?:Exact Answer|Final Answer|Answer)\s*:", content, flags=re.IGNORECASE):
                 add_candidate(candidates, content, label, "assistant exact answer", weight=5)
                 break
+
+    for message in record.get("messages") or []:
+        if message.get("role") == "assistant" and message.get("content"):
+            maybe_add_assistant_json_candidate(candidates, str(message.get("content") or ""), label)
 
     call_names = parse_tool_call_names(record.get("messages") or [])
     for message in record.get("messages") or []:
@@ -436,9 +470,13 @@ def format_candidates(candidates: List[Dict[str, Any]]) -> str:
     for index, candidate in enumerate(candidates, start=1):
         source_counts = Counter(item["source"] for item in candidate.get("sources") or [])
         sources = ", ".join(f"{source}:{count}" for source, count in source_counts.most_common())
+        reason_counts = Counter(
+            f"{item.get('source')}:{item.get('reason')}" for item in candidate.get("sources") or []
+        )
+        reasons = "; ".join(reason for reason, _ in reason_counts.most_common(4))
         lines.append(
             f"{index}. {candidate['answer']} | score={candidate.get('score', candidate['count'])} "
-            f"| votes={candidate['count']} | sources={sources}"
+            f"| votes={candidate['count']} | sources={sources} | hints={reasons}"
         )
     return "\n".join(lines) or "(no usable candidates)"
 
@@ -491,11 +529,7 @@ def final_answer_from_judgment(judgment: Dict[str, Any], fallback: str) -> str:
 
 
 def judge_confidence(judgment: Dict[str, Any], fallback: int = 0) -> int:
-    try:
-        confidence = int(judgment.get("confidence", fallback))
-    except (TypeError, ValueError):
-        confidence = fallback
-    return max(0, min(100, confidence))
+    return parse_confidence(judgment.get("confidence", fallback), fallback=fallback)
 
 
 def matching_candidate_judgments(judgment: Dict[str, Any], answer: str) -> List[Dict[str, Any]]:
