@@ -10,34 +10,36 @@ This folder contains the extra-credit path for the course project.
 
 ## Suggested server workflow
 
-Generate trajectories first:
+Generate trajectories for a legitimate training/development split first. Do not build SFT data from
+`browsecomp_plus_hard50.jsonl` if it is the public-test or final scoring set in your course setting.
 
 ```bash
 python -m agent.run_deep_research \
-  --dataset browsecomp_plus_hard50.jsonl \
+  --dataset browsecomp_plus_train.jsonl \
   --index-path indexes/browsecomp_plus_bm25.sqlite \
   --model qwen_auto \
   --base-url http://127.0.0.1:8000/v1 \
-  --output runs/deep_research_submission.jsonl
+  --output runs/deep_research_submission_train.jsonl
 ```
 
 Evaluate:
 
 ```bash
 python -m agent.eval \
-  --submission runs/deep_research_submission.jsonl \
-  --dataset browsecomp_plus_hard50.jsonl \
+  --submission runs/deep_research_submission_train.jsonl \
+  --dataset browsecomp_plus_train.jsonl \
   --model qwen_auto \
   --base-url http://127.0.0.1:8000/v1 \
-  --output runs/deep_research_eval.jsonl
+  --output runs/deep_research_eval_train.jsonl
 ```
 
 Build SFT data from successful trajectories:
 
 ```bash
 python open_track/build_sft_data.py \
-  --submission runs/deep_research_submission.jsonl \
-  --eval-results runs/deep_research_eval.jsonl \
+  --submission runs/deep_research_submission_train.jsonl \
+  --eval-results runs/deep_research_eval_train.jsonl \
+  --source-split train \
   --max-tool-chars 1000 \
   --output open_track/data/sft_success.jsonl
 ```

@@ -55,6 +55,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build SFT data from successful Deep Research trajectories.")
     parser.add_argument("--submission", required=True, help="Agent submission JSONL.")
     parser.add_argument("--eval-results", required=True, help="Evaluation JSONL produced by agent.eval.")
+    parser.add_argument(
+        "--source-split",
+        required=True,
+        choices=("train", "dev", "test"),
+        help="Data split used to produce the submission/eval files. SFT from test data is refused.",
+    )
     parser.add_argument("--output", default="open_track/data/sft_success.jsonl", help="Output SFT JSONL.")
     parser.add_argument("--max-tool-chars", type=int, default=3000, help="Compact long tool outputs.")
     parser.add_argument(
@@ -67,6 +73,11 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    if args.source_split == "test":
+        raise ValueError(
+            "Refusing to build SFT data from a test split. "
+            "Use only training/development trajectories with legitimate labels."
+        )
     correct_ids = load_correct_query_ids(args.eval_results, include_uncertain=args.include_uncertain)
     submissions = load_jsonl(args.submission)
 
