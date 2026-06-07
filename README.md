@@ -324,3 +324,46 @@ python -m agent.eval \
 ```
 
 Open Track 相关工具与训练脚本在 `open_track/` 下；训练脚本只接受服务器本地已有模型路径，不会下载模型。
+
+## 12. 最终实验结果与提交建议
+
+当前最终结果：
+
+- 基础 DeepResearch baseline：`7/50 = 14%`
+  - submission: `runs/deep_research_submission_v6_docref.jsonl`
+  - eval: `runs/deep_research_eval_v6_docref.jsonl`
+- OpenTrack relaxed fusion：`8/50 = 16%`
+  - submission: `runs/deep_research_submission_fused_v6_relaxed.jsonl`
+  - eval: `runs/deep_research_eval_fused_v6_relaxed.jsonl`
+
+OpenTrack 最终结果由多条合法本地 agent 轨迹融合得到，不读取 gold answer、eval 标签或按题正误信息。
+
+如果源轨迹文件已经在 `runs/` 中，可以一行复现 OpenTrack 最终融合、评估和分析：
+
+```bash
+python open_track/run.py \
+  --dataset browsecomp_plus_hard50.jsonl \
+  --model qwen_auto \
+  --base-url http://127.0.0.1:8000/v1
+```
+
+建议按课程答疑整理提交目录：
+
+```text
+231300088-赵旭令-acc16-opentrack/
+  README.md
+  report.tex
+  core/
+    agent/
+  eval/
+    231300088-赵旭令-submission-acc14.jsonl
+    eval.txt
+  opentrack/
+    README.md
+    run.py
+    agent/
+    eval/
+      231300088-赵旭令-opentrack-submission-acc16.jsonl
+      eval.txt
+    requirements.txt
+```

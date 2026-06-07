@@ -4,11 +4,46 @@ This folder contains the extra-credit path for the course project.
 
 ## What is implemented
 
-- New tools: `decompose_question`, `open_doc`, `find_in_doc`, and `verify_claim` are exposed from `agent/tools.py`.
+- New tools: `decompose_question`, `get_document`, and `verify_claim` are exposed from `agent/tools.py`.
 - Multi-agent architecture: `agent/deep_research_agent.py` separates planning, search execution, answer synthesis, and verification.
-- Training path: `build_sft_data.py` converts successful trajectories into SFT data, and `train.py` fine-tunes from a local model path only.
+- Candidate fusion: `agent/fuse_deep_research_runs.py` fuses several legal local-agent trajectories with a conservative evidence judge.
+- Training path: `build_sft_data.py` converts successful trajectories into SFT data, and `train.py` fine-tunes from a local model path only. This path is implemented but is not used for the final submitted score.
 
-## Suggested server workflow
+## Final OpenTrack result
+
+The final submitted OpenTrack run is `fused_v6_relaxed`:
+
+- Baseline DeepResearch: `7/50 = 14%`
+- OpenTrack relaxed fusion: `8/50 = 16%`
+- Correct query ids: `5, 53, 159, 314, 380, 651, 1082, 1095`
+
+The improvement comes from multi-trajectory candidate fusion. It does not use gold answers,
+eval labels, hard-coded query ids, or SFT data from the evaluation set.
+
+If the source trajectory files already exist in `runs/`, reproduce the final OpenTrack
+submission and evaluation with:
+
+```bash
+python open_track/run.py \
+  --dataset browsecomp_plus_hard50.jsonl \
+  --model qwen_auto \
+  --base-url http://127.0.0.1:8000/v1
+```
+
+By default this fuses:
+
+- `runs/deep_research_submission_v6_docref.jsonl`
+- `runs/deep_research_submission_v8_repeatcap.jsonl`
+- `runs/deep_research_submission_v11_overnight.jsonl`
+- `runs/deep_research_submission_v12_overnight_no_react_verify.jsonl`
+- `runs/deep_research_submission_v13_overnight_heuristic.jsonl`
+- `runs/deep_research_submission_v14_balanced_overnight.jsonl`
+
+If one of these diagnostic trajectories is intentionally absent, pass `--skip-missing` for
+an ablation-only run. The final submitted result should include the exact fused output and
+eval file in `opentrack/eval/`.
+
+## Optional SFT workflow
 
 Generate trajectories for a legitimate training/development split first. Do not build SFT data from
 `browsecomp_plus_hard50.jsonl` if it is the public-test or final scoring set in your course setting.
@@ -146,8 +181,9 @@ python -m agent.eval \
 
 For the OpenTrack report section, keep these artifacts after the server run:
 
-- Baseline trajectory: `runs/submission.jsonl` from the original single-search notebook or equivalent baseline script.
-- Multi-agent trajectory: `runs/deep_research_submission.jsonl`.
-- Evaluation output: `runs/deep_research_eval.jsonl`.
+- Baseline trajectory: `runs/deep_research_submission_v6_docref.jsonl`.
+- Baseline evaluation output: `runs/deep_research_eval_v6_docref.jsonl`.
+- Final OpenTrack trajectory: `runs/deep_research_submission_fused_v6_relaxed.jsonl`.
+- Final OpenTrack evaluation output: `runs/deep_research_eval_fused_v6_relaxed.jsonl`.
 - SFT data summary: number of rows written by `build_sft_data.py`.
 - Training setting: model path, LoRA/full fine-tuning choice, sequence length, batch size, epochs, and checkpoint path.
