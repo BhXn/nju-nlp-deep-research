@@ -1,0 +1,943 @@
+{
+  "eval_summary": {
+    "type": "summary",
+    "total_queries": 50,
+    "correct": 7,
+    "incorrect": 43,
+    "accuracy": 0.14,
+    "avg_tool_calls_per_query": 16.48,
+    "avg_retrieved_docs_per_query": 66.5,
+    "total_tool_calls": 824,
+    "total_retrieved_docs": 3325,
+    "eval_model": "qwen_auto"
+  },
+  "category_counts": {
+    "wrong_gold_missing": 29,
+    "wrong_unknown": 5,
+    "correct": 7,
+    "wrong_gold_seen": 9
+  },
+  "status_counts": {
+    "completed": 49,
+    "no_new_information": 1
+  },
+  "tool_counts": {
+    "decompose_question": 51,
+    "search": 419,
+    "verify_claim": 353,
+    "open_doc": 1
+  },
+  "lexical_verify_supported_likely_counts": {
+    "True": 257,
+    "False": 21
+  },
+  "model_verdict_counts": {
+    "unsupported": 47,
+    "supported": 28
+  },
+  "wrong_supported_by_model_verifier": 21,
+  "missing_docid_verify_queries": 2,
+  "examples": [
+    {
+      "query_id": "442",
+      "category": "wrong_gold_missing",
+      "status": "completed",
+      "gold_answer": "THE DAWN OF AUSTRALIAN COLONISATION",
+      "predicted_answer": "The Founding of the Colony",
+      "gold_seen_in_tools": false,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 9,
+        "verify_claim": 8
+      },
+      "lexical_verify_count": 6,
+      "model_verify_count": 2,
+      "supported_model_verify": 0,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "549",
+      "category": "wrong_gold_missing",
+      "status": "completed",
+      "gold_answer": "Marguerite Smith",
+      "predicted_answer": "Belle da Costa Greene",
+      "gold_seen_in_tools": false,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 7,
+        "verify_claim": 7
+      },
+      "lexical_verify_count": 6,
+      "model_verify_count": 1,
+      "supported_model_verify": 1,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "26",
+      "category": "wrong_gold_missing",
+      "status": "completed",
+      "gold_answer": "Binochios",
+      "predicted_answer": "Buenos Aires",
+      "gold_seen_in_tools": false,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 11,
+        "verify_claim": 7
+      },
+      "lexical_verify_count": 5,
+      "model_verify_count": 2,
+      "supported_model_verify": 0,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "471",
+      "category": "wrong_gold_missing",
+      "status": "completed",
+      "gold_answer": "Scott A. Ebers ",
+      "predicted_answer": "John F. Moulds III",
+      "gold_seen_in_tools": false,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 10,
+        "verify_claim": 8
+      },
+      "lexical_verify_count": 6,
+      "model_verify_count": 2,
+      "supported_model_verify": 0,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "761",
+      "category": "wrong_unknown",
+      "status": "completed",
+      "gold_answer": "7%",
+      "predicted_answer": "None",
+      "gold_seen_in_tools": false,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 10,
+        "verify_claim": 8
+      },
+      "lexical_verify_count": 6,
+      "model_verify_count": 2,
+      "supported_model_verify": 0,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "815",
+      "category": "wrong_gold_missing",
+      "status": "completed",
+      "gold_answer": "One Red Rose",
+      "predicted_answer": "Emma",
+      "gold_seen_in_tools": false,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 7,
+        "verify_claim": 6
+      },
+      "lexical_verify_count": 5,
+      "model_verify_count": 1,
+      "supported_model_verify": 1,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "216",
+      "category": "wrong_gold_missing",
+      "status": "completed",
+      "gold_answer": "Manly Hall",
+      "predicted_answer": "Jim Abrahams",
+      "gold_seen_in_tools": false,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 7,
+        "verify_claim": 7
+      },
+      "lexical_verify_count": 6,
+      "model_verify_count": 1,
+      "supported_model_verify": 1,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "314",
+      "category": "correct",
+      "status": "completed",
+      "gold_answer": "Spero Therapeutics",
+      "predicted_answer": "Spero Therapeutics",
+      "gold_seen_in_tools": true,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 7,
+        "verify_claim": 7
+      },
+      "lexical_verify_count": 6,
+      "model_verify_count": 1,
+      "supported_model_verify": 1,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "241",
+      "category": "wrong_gold_seen",
+      "status": "completed",
+      "gold_answer": "Queen Marie of Romania",
+      "predicted_answer": "Queen of Romania",
+      "gold_seen_in_tools": true,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 7,
+        "verify_claim": 7
+      },
+      "lexical_verify_count": 6,
+      "model_verify_count": 1,
+      "supported_model_verify": 1,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "930",
+      "category": "wrong_gold_seen",
+      "status": "completed",
+      "gold_answer": "2001",
+      "predicted_answer": "1776",
+      "gold_seen_in_tools": true,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 11,
+        "verify_claim": 7
+      },
+      "lexical_verify_count": 5,
+      "model_verify_count": 2,
+      "supported_model_verify": 0,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "651",
+      "category": "correct",
+      "status": "completed",
+      "gold_answer": "FormFactor",
+      "predicted_answer": "FormFactor",
+      "gold_seen_in_tools": true,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 9,
+        "verify_claim": 8
+      },
+      "lexical_verify_count": 6,
+      "model_verify_count": 2,
+      "supported_model_verify": 1,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "1082",
+      "category": "correct",
+      "status": "completed",
+      "gold_answer": "Jagannatha Hora",
+      "predicted_answer": "Jagannatha Hora",
+      "gold_seen_in_tools": true,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 8,
+        "verify_claim": 6
+      },
+      "lexical_verify_count": 5,
+      "model_verify_count": 1,
+      "supported_model_verify": 1,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "159",
+      "category": "wrong_gold_missing",
+      "status": "completed",
+      "gold_answer": "October 15, 2016",
+      "predicted_answer": "06-06-2025",
+      "gold_seen_in_tools": false,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 8,
+        "verify_claim": 8
+      },
+      "lexical_verify_count": 6,
+      "model_verify_count": 2,
+      "supported_model_verify": 0,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "5",
+      "category": "correct",
+      "status": "completed",
+      "gold_answer": "Cristina Ortiz",
+      "predicted_answer": "Cristina Ortiz",
+      "gold_seen_in_tools": true,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 7,
+        "open_doc": 1,
+        "verify_claim": 5
+      },
+      "lexical_verify_count": 4,
+      "model_verify_count": 1,
+      "supported_model_verify": 1,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "395",
+      "category": "wrong_gold_missing",
+      "status": "completed",
+      "gold_answer": "Isgro",
+      "predicted_answer": "Vollmar",
+      "gold_seen_in_tools": false,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 7,
+        "verify_claim": 7
+      },
+      "lexical_verify_count": 6,
+      "model_verify_count": 1,
+      "supported_model_verify": 1,
+      "missing_docid_verify_calls": 4
+    },
+    {
+      "query_id": "944",
+      "category": "wrong_unknown",
+      "status": "completed",
+      "gold_answer": "Katja Hujo",
+      "predicted_answer": "Unknown",
+      "gold_seen_in_tools": false,
+      "pred_seen_in_tools": false,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 8,
+        "verify_claim": 8
+      },
+      "lexical_verify_count": 6,
+      "model_verify_count": 2,
+      "supported_model_verify": 0,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "747",
+      "category": "wrong_gold_seen",
+      "status": "completed",
+      "gold_answer": "Japan",
+      "predicted_answer": "Canada",
+      "gold_seen_in_tools": true,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 7,
+        "verify_claim": 6
+      },
+      "lexical_verify_count": 5,
+      "model_verify_count": 1,
+      "supported_model_verify": 1,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "635",
+      "category": "wrong_unknown",
+      "status": "completed",
+      "gold_answer": "404",
+      "predicted_answer": "unknown",
+      "gold_seen_in_tools": false,
+      "pred_seen_in_tools": false,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 10,
+        "verify_claim": 8
+      },
+      "lexical_verify_count": 6,
+      "model_verify_count": 2,
+      "supported_model_verify": 0,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "113",
+      "category": "wrong_gold_missing",
+      "status": "completed",
+      "gold_answer": "Paropsis dilatata",
+      "predicted_answer": "Popillia japonica",
+      "gold_seen_in_tools": false,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 7,
+        "verify_claim": 7
+      },
+      "lexical_verify_count": 6,
+      "model_verify_count": 1,
+      "supported_model_verify": 1,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "556",
+      "category": "wrong_gold_missing",
+      "status": "completed",
+      "gold_answer": "Amos Makarau",
+      "predicted_answer": "Jennifer E. Purcell",
+      "gold_seen_in_tools": false,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 8,
+        "verify_claim": 6
+      },
+      "lexical_verify_count": 5,
+      "model_verify_count": 1,
+      "supported_model_verify": 1,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "153",
+      "category": "wrong_gold_missing",
+      "status": "completed",
+      "gold_answer": "Walter Allen",
+      "predicted_answer": "L. Frank Baum",
+      "gold_seen_in_tools": false,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 7,
+        "verify_claim": 7
+      },
+      "lexical_verify_count": 6,
+      "model_verify_count": 1,
+      "supported_model_verify": 1,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "263",
+      "category": "wrong_gold_seen",
+      "status": "completed",
+      "gold_answer": "Simerly",
+      "predicted_answer": "Iacocca",
+      "gold_seen_in_tools": true,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 7,
+        "verify_claim": 7
+      },
+      "lexical_verify_count": 6,
+      "model_verify_count": 1,
+      "supported_model_verify": 1,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "827",
+      "category": "wrong_gold_missing",
+      "status": "completed",
+      "gold_answer": "Edwin Hughes Kendrick",
+      "predicted_answer": "James Singleton",
+      "gold_seen_in_tools": false,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 2,
+        "search": 9,
+        "verify_claim": 7
+      },
+      "lexical_verify_count": 5,
+      "model_verify_count": 2,
+      "supported_model_verify": 0,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "730",
+      "category": "wrong_unknown",
+      "status": "completed",
+      "gold_answer": "Richie on the Rocks",
+      "predicted_answer": "unknown",
+      "gold_seen_in_tools": false,
+      "pred_seen_in_tools": false,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 10,
+        "verify_claim": 8
+      },
+      "lexical_verify_count": 6,
+      "model_verify_count": 2,
+      "supported_model_verify": 0,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "79",
+      "category": "wrong_gold_missing",
+      "status": "completed",
+      "gold_answer": "University of Aberdeen",
+      "predicted_answer": "Yale University",
+      "gold_seen_in_tools": false,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 10,
+        "verify_claim": 8
+      },
+      "lexical_verify_count": 6,
+      "model_verify_count": 2,
+      "supported_model_verify": 0,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "86",
+      "category": "wrong_gold_missing",
+      "status": "completed",
+      "gold_answer": "Gostick",
+      "predicted_answer": "Beard",
+      "gold_seen_in_tools": false,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 7,
+        "verify_claim": 7
+      },
+      "lexical_verify_count": 6,
+      "model_verify_count": 1,
+      "supported_model_verify": 1,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "397",
+      "category": "wrong_gold_missing",
+      "status": "completed",
+      "gold_answer": "SMC-09-020",
+      "predicted_answer": "FOIA-2010-001234",
+      "gold_seen_in_tools": false,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 8,
+        "verify_claim": 8
+      },
+      "lexical_verify_count": 6,
+      "model_verify_count": 2,
+      "supported_model_verify": 0,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "427",
+      "category": "wrong_gold_missing",
+      "status": "completed",
+      "gold_answer": "Guerlain ",
+      "predicted_answer": "Pabst Brewing Company",
+      "gold_seen_in_tools": false,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 13,
+        "verify_claim": 8
+      },
+      "lexical_verify_count": 6,
+      "model_verify_count": 2,
+      "supported_model_verify": 0,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "1072",
+      "category": "wrong_gold_missing",
+      "status": "completed",
+      "gold_answer": "Iranian Ministry of Culture and Higher Education",
+      "predicted_answer": "J. Paul Getty Trust",
+      "gold_seen_in_tools": false,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 7,
+        "verify_claim": 6
+      },
+      "lexical_verify_count": 5,
+      "model_verify_count": 1,
+      "supported_model_verify": 1,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "380",
+      "category": "correct",
+      "status": "completed",
+      "gold_answer": "46.30 centimetres",
+      "predicted_answer": "46.30",
+      "gold_seen_in_tools": true,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 7,
+        "verify_claim": 7
+      },
+      "lexical_verify_count": 6,
+      "model_verify_count": 1,
+      "supported_model_verify": 1,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "662",
+      "category": "wrong_gold_seen",
+      "status": "completed",
+      "gold_answer": "pears",
+      "predicted_answer": "apples",
+      "gold_seen_in_tools": true,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 8,
+        "verify_claim": 8
+      },
+      "lexical_verify_count": 6,
+      "model_verify_count": 2,
+      "supported_model_verify": 1,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "36",
+      "category": "wrong_gold_missing",
+      "status": "completed",
+      "gold_answer": "AJ Auxerre",
+      "predicted_answer": "SV Werder Bremen",
+      "gold_seen_in_tools": false,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 10,
+        "verify_claim": 8
+      },
+      "lexical_verify_count": 6,
+      "model_verify_count": 2,
+      "supported_model_verify": 0,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "53",
+      "category": "correct",
+      "status": "completed",
+      "gold_answer": "Norman Naimark",
+      "predicted_answer": "Norman Naimark",
+      "gold_seen_in_tools": true,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 7,
+        "verify_claim": 7
+      },
+      "lexical_verify_count": 6,
+      "model_verify_count": 1,
+      "supported_model_verify": 1,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "709",
+      "category": "wrong_gold_missing",
+      "status": "completed",
+      "gold_answer": "Lewis Dunk",
+      "predicted_answer": "Solly March",
+      "gold_seen_in_tools": false,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 7,
+        "verify_claim": 6
+      },
+      "lexical_verify_count": 5,
+      "model_verify_count": 1,
+      "supported_model_verify": 1,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "166",
+      "category": "wrong_gold_missing",
+      "status": "completed",
+      "gold_answer": "Dr. James Russell",
+      "predicted_answer": "Alan MacEachern",
+      "gold_seen_in_tools": false,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 8,
+        "verify_claim": 6
+      },
+      "lexical_verify_count": 5,
+      "model_verify_count": 1,
+      "supported_model_verify": 1,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "869",
+      "category": "wrong_gold_seen",
+      "status": "completed",
+      "gold_answer": "kindergarten",
+      "predicted_answer": "5th",
+      "gold_seen_in_tools": true,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 9,
+        "verify_claim": 8
+      },
+      "lexical_verify_count": 6,
+      "model_verify_count": 2,
+      "supported_model_verify": 0,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "432",
+      "category": "wrong_gold_missing",
+      "status": "completed",
+      "gold_answer": "Aaron Strick",
+      "predicted_answer": "Ann Hampton Callaway",
+      "gold_seen_in_tools": false,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 7,
+        "verify_claim": 7
+      },
+      "lexical_verify_count": 6,
+      "model_verify_count": 1,
+      "supported_model_verify": 1,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "297",
+      "category": "wrong_gold_missing",
+      "status": "completed",
+      "gold_answer": "Insomnia",
+      "predicted_answer": "The Godfather Part II",
+      "gold_seen_in_tools": false,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 10,
+        "verify_claim": 8
+      },
+      "lexical_verify_count": 6,
+      "model_verify_count": 2,
+      "supported_model_verify": 0,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "371",
+      "category": "wrong_gold_seen",
+      "status": "completed",
+      "gold_answer": "Washington St.",
+      "predicted_answer": "South Michigan Avenue",
+      "gold_seen_in_tools": true,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 10,
+        "verify_claim": 8
+      },
+      "lexical_verify_count": 6,
+      "model_verify_count": 2,
+      "supported_model_verify": 0,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "785",
+      "category": "wrong_gold_missing",
+      "status": "completed",
+      "gold_answer": "Rona Weerasuriya",
+      "predicted_answer": "Alberto Daniel Cimadamore",
+      "gold_seen_in_tools": false,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 8,
+        "verify_claim": 8
+      },
+      "lexical_verify_count": 6,
+      "model_verify_count": 2,
+      "supported_model_verify": 0,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "978",
+      "category": "wrong_gold_missing",
+      "status": "completed",
+      "gold_answer": "Olka Gretcher",
+      "predicted_answer": "Loid Forger",
+      "gold_seen_in_tools": false,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 7,
+        "verify_claim": 7
+      },
+      "lexical_verify_count": 6,
+      "model_verify_count": 1,
+      "supported_model_verify": 1,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "450",
+      "category": "wrong_gold_missing",
+      "status": "completed",
+      "gold_answer": "The Rubáiyát of Omar Khayyám.",
+      "predicted_answer": "Oresteia",
+      "gold_seen_in_tools": false,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 10,
+        "verify_claim": 4
+      },
+      "lexical_verify_count": 2,
+      "model_verify_count": 2,
+      "supported_model_verify": 1,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "342",
+      "category": "wrong_gold_missing",
+      "status": "completed",
+      "gold_answer": "Richard James David Attwood",
+      "predicted_answer": "Ken Miles",
+      "gold_seen_in_tools": false,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 10,
+        "verify_claim": 8
+      },
+      "lexical_verify_count": 6,
+      "model_verify_count": 2,
+      "supported_model_verify": 0,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "1061",
+      "category": "wrong_unknown",
+      "status": "no_new_information",
+      "gold_answer": "I Survived I Kissed Dating Goodbye",
+      "predicted_answer": "unknown",
+      "gold_seen_in_tools": false,
+      "pred_seen_in_tools": false,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 12,
+        "verify_claim": 2
+      },
+      "lexical_verify_count": 0,
+      "model_verify_count": 2,
+      "supported_model_verify": 0,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "1095",
+      "category": "correct",
+      "status": "completed",
+      "gold_answer": "Duncan Clarke",
+      "predicted_answer": "Duncan Clarke",
+      "gold_seen_in_tools": true,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 7,
+        "verify_claim": 7
+      },
+      "lexical_verify_count": 6,
+      "model_verify_count": 1,
+      "supported_model_verify": 1,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "33",
+      "category": "wrong_gold_missing",
+      "status": "completed",
+      "gold_answer": "Australian",
+      "predicted_answer": "David Greenway",
+      "gold_seen_in_tools": false,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 7,
+        "verify_claim": 7
+      },
+      "lexical_verify_count": 6,
+      "model_verify_count": 1,
+      "supported_model_verify": 1,
+      "missing_docid_verify_calls": 6
+    },
+    {
+      "query_id": "487",
+      "category": "wrong_gold_seen",
+      "status": "completed",
+      "gold_answer": "Edward Norton",
+      "predicted_answer": "Nick Cassavetes",
+      "gold_seen_in_tools": true,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 7,
+        "verify_claim": 7
+      },
+      "lexical_verify_count": 6,
+      "model_verify_count": 1,
+      "supported_model_verify": 1,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "180",
+      "category": "wrong_gold_missing",
+      "status": "completed",
+      "gold_answer": "blink-182",
+      "predicted_answer": "Wings",
+      "gold_seen_in_tools": false,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 10,
+        "verify_claim": 8
+      },
+      "lexical_verify_count": 6,
+      "model_verify_count": 2,
+      "supported_model_verify": 0,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "684",
+      "category": "wrong_gold_seen",
+      "status": "completed",
+      "gold_answer": "Inhibition of ferroptosis and iron accumulation alleviates pulmonary fibrosis in a bleomycin model",
+      "predicted_answer": "Cystine transporter SLC7A11/xCT in cancer: ferroptosis, nutrient dependency, and cancer therapy",
+      "gold_seen_in_tools": true,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 8,
+        "verify_claim": 8
+      },
+      "lexical_verify_count": 6,
+      "model_verify_count": 2,
+      "supported_model_verify": 0,
+      "missing_docid_verify_calls": 0
+    },
+    {
+      "query_id": "85",
+      "category": "wrong_gold_missing",
+      "status": "completed",
+      "gold_answer": "Genghis Khan, His Heirs and the Founding of Modern China",
+      "predicted_answer": "Keep Moving",
+      "gold_seen_in_tools": false,
+      "pred_seen_in_tools": true,
+      "tool_counts": {
+        "decompose_question": 1,
+        "search": 7,
+        "verify_claim": 7
+      },
+      "lexical_verify_count": 6,
+      "model_verify_count": 1,
+      "supported_model_verify": 1,
+      "missing_docid_verify_calls": 0
+    }
+  ]
+}

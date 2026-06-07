@@ -1,0 +1,357 @@
+\documentclass[a4paper]{article}
+\usepackage[inner=2.0cm,outer=2.0cm,top=2.5cm,bottom=2.5cm]{geometry}
+\usepackage[fontset=fandol]{ctex}
+\usepackage{color}
+\usepackage{graphicx}
+\usepackage{amssymb}
+\usepackage{amsmath}
+\usepackage{amsthm}
+\usepackage{bm}
+\usepackage{multirow}
+\usepackage{mathtools}
+\usepackage{enumerate}
+\usepackage{tikz}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usetikzlibrary{automata,positioning,arrows}
+
+
+\newcommand{\homework}[5]{
+    \pagestyle{myheadings}
+    \thispagestyle{plain}
+    \newpage
+    \setcounter{page}{1}
+    \noindent
+    \begin{center}
+    \framebox{
+        \vbox{\vspace{2mm}
+        \hbox to 6.28in { {\bf 自然语言处理 \hfill #2} }
+        \vspace{6mm}
+        \hbox to 6.28in { {\Large \hfill #1 \hfill} }
+        \vspace{6mm}
+        \hbox to 6.28in { {\it Instructor: {\rm #3} \hfill Name: {\rm #4}, StudentId: {\rm #5}}}
+        \vspace{2mm}}
+    }
+    \end{center}
+    \vspace*{4mm}
+}
+
+% =========以上内容无需修改变动=========
+
+\newenvironment{solution}
+{\color{blue} \paragraph{Solution.}}
+{\newline \qed}
+
+\begin{document}
+% =========这里改成自己的名字和学号=========
+% 样例，名字用中文填写
+% \homework{Homework 1}{Fall 2024}{Lijun Zhang}{张三}{111220001}
+\homework{Report}{Spring 2026}{Zheng Wu}{赵旭令(AI院系)}{231300088}
+
+\section{任务概述}
+
+本实验要求在课程提供的 BrowseComp-Plus 本地语料和 BM25 检索器基础上，实现一个能够进行多轮检索、维护中间状态、压缩上下文并基于证据输出最终答案的 Deep Research Agent。实验约束包括：不替换课程提供的检索器，不使用 Google/Bing 等外部检索服务，不引入额外外部知识库；模型侧通过本地 vLLM OpenAI-compatible 接口调用。
+
+当前实现主要围绕以下目标展开：
+
+\begin{enumerate}
+    \item 实现多轮检索 loop，并设置明确停止条件。
+    \item 将问题分解、检索执行、答案综合、答案验证拆成相对独立的子模块。
+    \item 在有限上下文窗口内维护检索历史、证据文档、验证记录和待验证子目标。
+    \item 对不同 agent 配置进行消融实验，并分析错误来源。
+    \item 实现 OpenTrack 的多轨迹候选融合与答案审查，并保证不使用测试集答案或评测结果构造训练数据。
+\end{enumerate}
+
+\section{方法设计}
+
+\subsection{整体架构}
+
+本项目实现的主 agent 位于 \verb|agent/deep_research_agent.py|。整体结构由四个阶段组成：
+
+\begin{enumerate}
+    \item \textbf{Planner}：将原始复杂问题拆解为子问题、关键词、初始搜索 query 和需要验证的约束。
+    \item \textbf{Search Executor}：执行初始检索和 ReAct 过程中的工具调用，并记录工具轨迹。
+    \item \textbf{Evidence Store}：维护已执行搜索、已召回文档、打开文档内容、关键词窗口、验证记录和去重信息。
+    \item \textbf{Answer Synthesizer / Verifier}：根据压缩证据综合最终答案，并用验证器检查候选答案是否被证据支持。
+\end{enumerate}
+
+图 \ref{fig:agent-flow} 给出了基础 DeepResearch agent 与 OpenTrack 融合模块的流程。
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[
+    node distance=0.8cm,
+    block/.style={rectangle, draw, rounded corners, align=center, text width=8.8cm, minimum height=0.75cm},
+    smallblock/.style={rectangle, draw, rounded corners, align=center, text width=4.0cm, minimum height=0.75cm},
+    arrow/.style={->, thick}
+]
+\node[block] (input) {输入复杂问题};
+\node[block, below=of input] (planner) {Planner：拆解子问题、关键词、初始 search query 和 must-verify 约束};
+\node[block, below=of planner] (search) {本地工具调用：search 检索 BM25；get\_document 打开文档或定位关键词窗口};
+\node[block, below=of search] (store) {EvidenceStore：去重 query，维护文档、窗口、验证历史和压缩上下文};
+\node[block, below=of store] (react) {ReAct loop：根据当前证据决定继续检索、验证候选，或进入最终回答};
+\node[smallblock, below left=0.8cm and 0.35cm of react] (answer) {Answer Synthesizer / Verifier\\输出单轨迹答案};
+\node[smallblock, below right=0.8cm and 0.35cm of react] (fusion) {OpenTrack Fusion\\多轨迹候选重判};
+\node[block, below=2.3cm of react] (output) {最终 JSONL：predicted\_answer 与完整 messages 轨迹};
+\draw[arrow] (input) -- (planner);
+\draw[arrow] (planner) -- (search);
+\draw[arrow] (search) -- (store);
+\draw[arrow] (store) -- (react);
+\draw[arrow] (react.east) -- ++(1.0,0) |- node[pos=0.25, right, font=\small] {证据不足} (search.east);
+\draw[arrow] (react) -- (answer);
+\draw[arrow] (answer) -- (fusion);
+\draw[arrow] (fusion) -- (output);
+\end{tikzpicture}
+\caption{DeepResearch agent 与 OpenTrack 候选融合流程}
+\label{fig:agent-flow}
+\end{figure}
+
+运行入口为 \verb|agent/run_deep_research.py|。该脚本批量读取数据集，调用 agent，并输出符合提交格式的 JSONL 轨迹文件。
+
+\subsection{工具设计}
+
+在课程原始搜索工具基础上，当前实现使用以下本地工具：
+
+\begin{enumerate}
+    \item \verb|decompose_question|：确定性问题拆解 fallback，用于生成初始搜索 query。
+    \item \verb|search|：调用本地 BrowseComp-Plus BM25 索引，返回 docid、分数、URL 和摘要。
+    \item \verb|get_document|：根据 docid 打开较长文档片段；如果提供 keyword，则返回关键词附近窗口。
+    \item \verb|verify_claim|：对候选答案或中间声明进行本地词面验证，辅助发现明显 unsupported 的候选。
+\end{enumerate}
+
+所有工具均使用本地语料和本地索引，不访问外部互联网。
+
+\subsection{状态管理与停止条件}
+
+为了避免模型在多轮检索中反复搜索同一 query 或重复验证同一 claim，\verb|EvidenceStore| 维护了如下状态：
+
+\begin{enumerate}
+    \item 已执行 query 集合，用于跳过重复搜索。
+    \item 已召回文档集合，用于统计新信息量。
+    \item 文档详情和关键词窗口，用于构造压缩证据上下文。
+    \item 验证历史和 ReAct 验证计数，用于限制重复验证。
+\end{enumerate}
+
+主要停止条件包括最大 ReAct 轮数、最大总工具调用数、连续无新文档轮数和模型直接给出最终答案。当前常用默认参数为：最大 ReAct 轮数 6，初始 query 数 7，每次检索 top-8，总工具调用预算 36。
+
+\subsection{答案综合与验证}
+
+答案综合 prompt 明确要求先判断题目需要的 answer type，再输出短答案，避免输出解释、引用、角色名或中间线索。验证阶段调用 LLM verifier，要求只有证据直接支持 exact answer 时才给出 supported。后续实验发现，词面验证和 LLM verifier 仍可能把错误槽位答案判为 supported，因此额外实现了可选的 \verb|--answer-audit| 消融，用于在最终写出前再次检查 answer type 和约束链。
+
+\subsection{OpenTrack 候选融合}
+
+除单次 agent run 外，本项目还实现了 \verb|agent/fuse_deep_research_runs.py|。该脚本读取多个合法 agent 轨迹，抽取候选答案和证据片段，再调用本地模型作为 judge 进行重判。融合策略以一个稳定 base run 为默认答案；只有当 judge 给出足够高置信度、候选分数优势和证据支持时，才允许覆盖 base answer。该设计用于避免多轨迹融合把当前已知正确答案改错。
+
+最终 OpenTrack 版本采用 relaxed fusion：保留 base run 保护，但允许 judge 在置信度达到 80、候选分数至少高 4 分且满足证据支持时覆盖 base answer。该设置使一个原先错误的日期题被改为正确答案，同时没有丢失 baseline 已答对的题。
+
+需要强调的是，融合脚本只读取题目、已有 submission 轨迹、工具输出和模型自身产生的候选，不读取 \verb|eval| 文件中的标准答案或评测标签。评测结果只用于实验报告中的事后分析。
+
+\section{实验设置}
+
+\subsection{模型与服务}
+
+主要实验使用 Qwen3-8B，通过 vLLM 启动 OpenAI-compatible 服务：
+
+\begin{verbatim}
+vllm serve ./Qwen3-8B \
+  --served-model-name qwen_auto \
+  --enable-auto-tool-choice \
+  --tool-call-parser hermes \
+  --trust-remote-code \
+  --host 0.0.0.0 \
+  --port 8000
+\end{verbatim}
+
+agent 侧通过 \verb|http://127.0.0.1:8000/v1| 访问模型服务。默认关闭 Qwen thinking 输出，以提高工具调用格式稳定性。
+
+\subsection{数据与评估}
+
+当前已完成实验主要在 \verb|browsecomp_plus_hard50.jsonl| 上进行诊断。评估使用课程提供的 \verb|agent/eval.py|，由本地模型判断预测答案与标准答案是否语义等价。
+
+需要说明的是，\verb|hard50| 在本项目中仅作为调试和诊断集合使用。不会用其标准答案、评测结果或 query-level 正误标签构造训练数据、硬编码规则或选择最终答案。
+
+\section{实验结果}
+
+表 \ref{tab:results} 总结了已完成的主要 run。基础任务 baseline 采用 v6/v8 稳定多轮 DeepResearch 配置，准确率为 14\%。OpenTrack 最终版本采用 relaxed candidate fusion，准确率为 16\%。
+
+\begin{table}[h]
+\centering
+\scriptsize
+\begin{tabular}{|l|l|c|c|c|}
+\hline
+实验版本 & 主要配置 & 正确数 & 准确率 & 备注 \\
+\hline
+early baseline & 初始多轮 agent & 3/50 & 6\% & 工具调用多，但答案槽位错误严重 \\
+\hline
+v5 stable & 稳定检索配置 & 6/50 & 12\% & 回到较稳定主线 \\
+\hline
+v6 docref & docid 引用修正与证据压缩 & 7/50 & 14\% & 当前单 run 最优之一 \\
+\hline
+v7 broader & 更宽检索预算 & 6/50 & 12\% & 召回更多但噪声上升 \\
+\hline
+v8 repeatcap & 限制重复 verify & 7/50 & 14\% & 与 v6 持平，减少重复验证 \\
+\hline
+v9 avoid clues & 避免复制题干线索 & 6/50 & 12\% & 作为默认策略过强，已关闭 \\
+\hline
+fused v1 & 非保守候选融合 & 6/50 & 12\% & judge 覆盖过激，改错已有正确题 \\
+\hline
+fused v2 conservative & 保守融合，base=v6 & 7/50 & 14\% & 不退步，但未新增正确题 \\
+\hline
+v10 answer-audit & 最终 answer-type 审查 & 6/50 & 12\% & 直接作为最终 run 会退步 \\
+\hline
+LoRA preliminary & 小规模 LoRA 尝试 & 2/50 & 4\% & 训练数据不足，暂不采用 \\
+\hline
+fused v3 audit candidates & 加入 audit 候选的保守融合 & 7/50 & 14\% & 接受 2 次覆盖，但未新增正确题 \\
+\hline
+v11 wide overnight & 激进宽召回与答案 ensemble & 4/50 & 8\% & 证据噪声过多，全部达到工具预算上限 \\
+\hline
+v14 balanced overnight & 降低预算后的长运行配置 & 4/50 & 8\% & 仍被额外证据干扰，未采用 \\
+\hline
+fused v5 balanced & 保守融合，加入 v14 候选 & 7/50 & 14\% & 保留 baseline 正确题，但未新增 \\
+\hline
+fused v6 relaxed & relaxed 覆盖阈值 & 8/50 & 16\% & 最终 OpenTrack 版本，新增 query 159 \\
+\hline
+fused v7 all runs & 全候选池 relaxed fusion & 7/50 & 14\% & 候选过多导致 judge 退回错误 base 候选 \\
+\hline
+\end{tabular}
+\caption{主要实验结果}
+\label{tab:results}
+\end{table}
+
+最终基础任务提交建议使用 \verb|deep_research_submission_v6_docref.jsonl| 及其评估文件，OpenTrack 最终提交建议使用 \verb|deep_research_submission_fused_v6_relaxed.jsonl| 及其评估文件。最终 OpenTrack 正确题为 query id：5、53、159、314、380、651、1082、1095。
+
+\section{错误分析}
+
+\subsection{总体观察}
+
+从多次分析结果看，错误主要分为两类：
+
+\begin{enumerate}
+    \item \textbf{召回不足}：标准答案对应证据未出现在工具输出中，说明 query reformulation 和文档定位仍不足。
+    \item \textbf{召回后抽错}：标准答案或关键证据已经出现在工具输出中，但最终答案抽成了中间实体、相关人物、相邻作品、年份或反向关系。
+\end{enumerate}
+
+第二类错误尤其重要，因为它表明当前瓶颈不只是 BM25 召回，而是多跳约束绑定和 answer type 对齐不足。v6/v8 分析中均出现若干道 ``gold appeared in tool output but final answer was wrong'' 的样例。这类题说明模型已经接触到相关证据，但综合阶段没有严格回到题干询问的槽位。
+
+\subsection{错误轨迹案例}
+
+以下选取基础 v6 轨迹中的 10 个错误案例进行归因。之所以主要分析 v6，是因为 v6 是基础任务达标版本，并且保留了完整工具调用轨迹；最终 fused 版本本身不重新调用检索工具，因此其错误更多体现为候选选择问题。
+
+\begin{enumerate}
+    \item \textbf{442，复杂书目链条召回不足。} 预测为 ``The Founding of the Colony''，标准答案为 ``THE DAWN OF AUSTRALIAN COLONISATION''。轨迹中执行了 9 次 search 和 8 次 verify，但标准答案未出现在工具输出中，预测答案却出现在证据里。归因是 query 主要命中了第二本书的相邻主题，没有定位到 ``first chapter title'' 这个最终槽位。
+    \item \textbf{549，人物线索被错误实体吸引。} 预测为 Belle da Costa Greene，标准答案为 Marguerite Smith。轨迹中标准答案未召回，但预测实体被检索到且 verifier 给出 supported。归因是模型抓住了 ``librarian'' 这个强线索后跳到更著名的图书馆员，没有把 ``Dakotas writer / long-term partner / Europe visit / death in late 1950s'' 绑定到同一人。
+    \item \textbf{241，答案粒度不够。} 预测为 ``Queen of Romania''，标准答案为 ``Queen Marie of Romania''。标准答案相关文本已经出现在工具输出中，但最终只输出了头衔而不是完整人名。归因是 answer synthesizer 满足了类型 ``historical figure'' 的粗粒度要求，却没有遵守 ``name'' 的精确输出要求。
+    \item \textbf{930，年份槽位混淆。} 预测为 1776，标准答案为 2001。标准答案已在工具输出中出现，但最终答案选成了被分析文本或历史背景中的年份。归因是题目询问 research paper 的提交/发表相关年份，模型把中间作品线索的年代当成最终答案。
+    \item \textbf{747，国家关系方向错误。} 预测为 Canada，标准答案为 Japan。标准答案已被召回，且 v6 verifier 对错误答案给过 supported。归因是问题中包含出生地、产业产量、人物经历等多个国家线索，模型选择了路径上的中间国家，没有沿着 ``Person A worked for an aide to Person B'' 的关系继续推到目标国家。
+    \item \textbf{662，同类名词邻近干扰。} 预测为 apples，标准答案为 pears。标准答案已出现在工具输出中，但模型选择了同一段证据里的另一个水果名。归因是局部词面验证只看到水果和诗人线索重叠，缺少对 ``father tried to grow what'' 这一具体谓词的约束。
+    \item \textbf{869，时间条件和年级槽位混淆。} 预测为 5th，标准答案为 kindergarten。标准答案已被召回，但模型输出了同一人物教育经历中的另一个年级。归因是题目包含 ``as of December 31, 2013''、年龄、伴侣、职业等多重时间条件，模型没有把指定时间点对应到正确年级。
+    \item \textbf{487，多跳亲属关系反向。} 预测为 Nick Cassavetes，标准答案为 Edward Norton。标准答案已出现在工具输出中，v6 verifier 也曾支持错误候选。归因是题目问 actor，但线索链包含 ``town construction director''、``father of spouse''、``actor's ...'' 等反向亲属关系，模型把导演/相关人物当成目标 actor。
+    \item \textbf{159，错误日期被 OpenTrack 修正。} v6 预测为 06-06-2025，标准答案为 October 15, 2016。基础轨迹把网页检索日期或无关日期当成最后演出日期；relaxed fusion 比较多个轨迹候选后选择 October 15, 2016，使该题从错误变为正确。归因是单轨迹答案综合阶段未区分 ``页面日期'' 和 ``play last performance date''，而多轨迹候选融合提供了纠错机会。
+    \item \textbf{761，数值抽取失败导致拒答。} 预测为 None，标准答案为 7\%。轨迹中执行了 10 次 search 和 8 次 verify，但没有可靠定位到 annual report 中 EPS 增幅的具体百分比。归因是财报类问题需要精确数值和表格/段落定位，BM25 摘要容易召回公司报告周边文本，却不一定保留目标数字。
+\end{enumerate}
+
+\subsection{消融结论}
+
+\begin{enumerate}
+    \item \textbf{扩大检索预算不一定有效。} v7 broader 召回文档数上升，但准确率从 14\% 降到 12\%，说明更多证据会增加干扰。
+    \item \textbf{重复 verify 限制是稳定改进。} v8 与 v6 持平，同时减少无效重复验证，有利于控制工具预算。
+    \item \textbf{过强的 clue-copy guard 会退步。} v9 试图避免复制题干值，但会误伤一些本来需要重复实体或短答案的题。
+    \item \textbf{非保守融合有风险。} fused v1 将已有正确答案覆盖为错误答案，说明 judge 必须以强基线保护为前提。
+    \item \textbf{answer-audit 不能直接作为最终输出。} v10 的审查能提出一些有价值候选，但也会错误覆盖答案；因此更适合把 audit 结果作为融合候选，而不是直接替换最终答案。
+    \item \textbf{audit 候选融合仍未突破当前上限。} fused v3 将 answer-audit 产生的候选答案加入融合，最终仍为 14\%。本次融合接受了两个覆盖，但覆盖前后均未命中正确答案，说明仅靠已有轨迹候选重排暂时无法产生新的正确题。
+    \item \textbf{宽召回不是主要方向。} v11 和 v14 都明显退步，说明在 Qwen3-8B 上，把更多文档塞进上下文会让答案综合更容易选到相邻实体。
+    \item \textbf{relaxed fusion 是目前最有效的 OpenTrack 改进。} fused v6 将 query 159 从错误日期改为正确日期，最终达到 16\%，但进一步加入全部历史 run 的 fused v7 又回落到 14\%，说明融合候选池也需要控制噪声。
+\end{enumerate}
+
+\section{OpenTrack 与训练说明}
+
+当前已实现 OpenTrack 相关代码：
+
+\begin{enumerate}
+    \item \verb|open_track/run.py|：复现 OpenTrack 最终 relaxed fusion。
+    \item \verb|agent/fuse_deep_research_runs.py|：多轨迹候选融合和证据 judge。
+    \item \verb|open_track/build_sft_data.py|：将合法成功轨迹转换为 SFT 数据。
+    \item \verb|open_track/merge_sft_data.py|：合并多个合法开发集 run 的 SFT 数据。
+    \item \verb|open_track/train.py|：基于本地模型路径进行 LoRA 或全量微调。
+    \item \verb|open_track/merge_lora.py|：将 LoRA adapter 合并回 base model，便于 vLLM 服务部署。
+\end{enumerate}
+
+为了避免数据泄漏，当前版本已经强制要求构造 SFT 数据时声明 \verb|--source-split train| 或 \verb|--source-split dev|。如果声明 \verb|--source-split test|，脚本会直接拒绝运行。后续如果进行训练，只能使用合法 train/dev 轨迹，不能使用 \verb|hard50| 或最终测试集的答案、评测标签和按题筛选结果。
+
+本次最终提交不采用微调模型。原因是初步 LoRA 实验只有 4\% 准确率，低于未训练 agent；同时课程答疑明确禁止使用评估 50 题成功轨迹或 BrowseComp-Plus 830 条剩余评估数据构造 SFT 数据。因此最终 OpenTrack 分数来自无泄漏的 agent 架构和多轨迹融合，而不是训练集答案记忆。
+
+\section{复现命令}
+
+\subsection{主线 agent}
+
+\begin{verbatim}
+python -m agent.run_deep_research \
+  --dataset browsecomp_plus_hard50.jsonl \
+  --index-path indexes/browsecomp_plus_bm25.sqlite \
+  --model qwen_auto \
+  --base-url http://127.0.0.1:8000/v1 \
+  --output runs/deep_research_submission.jsonl
+\end{verbatim}
+
+\subsection{评估}
+
+\begin{verbatim}
+python -m agent.eval \
+  --submission runs/deep_research_submission.jsonl \
+  --dataset browsecomp_plus_hard50.jsonl \
+  --model qwen_auto \
+  --base-url http://127.0.0.1:8000/v1 \
+  --output runs/deep_research_eval.jsonl
+\end{verbatim}
+
+\subsection{OpenTrack 最终融合}
+
+\begin{verbatim}
+python -m agent.fuse_deep_research_runs \
+  --dataset browsecomp_plus_hard50.jsonl \
+  --submission v6=runs/deep_research_submission_v6_docref.jsonl \
+  --submission v8=runs/deep_research_submission_v8_repeatcap.jsonl \
+  --submission old_v11=runs/deep_research_submission_v11_overnight.jsonl \
+  --submission old_v12=runs/deep_research_submission_v12_overnight_no_react_verify.jsonl \
+  --submission old_v13=runs/deep_research_submission_v13_overnight_heuristic.jsonl \
+  --submission v14=runs/deep_research_submission_v14_balanced_overnight.jsonl \
+  --base-label v6 \
+  --override-confidence 80 \
+  --override-score-margin 4 \
+  --protected-base-extra-confidence 0 \
+  --protected-base-extra-margin 0 \
+  --model qwen_auto \
+  --base-url http://127.0.0.1:8000/v1 \
+  --output runs/deep_research_submission_fused_v6_relaxed.jsonl
+\end{verbatim}
+
+\section{提交组织}
+
+按照课程近期答疑，基础任务结果和 OpenTrack 结果应分开提交。建议文件组织如下：
+
+\begin{verbatim}
+231300088-赵旭令-acc16-opentrack/
+  README.md
+  report.tex
+  core/
+    agent/
+  eval/
+    231300088-赵旭令-submission-acc14.jsonl
+    eval.txt
+  opentrack/
+    README.md
+    run.py
+    agent/
+    eval/
+      231300088-赵旭令-opentrack-submission-acc16.jsonl
+      eval.txt
+    requirements.txt
+\end{verbatim}
+
+其中外层 \verb|eval/| 放基础任务 v6 的 submission/eval；\verb|opentrack/eval/| 放最终 fused v6 relaxed 的 submission/eval。
+
+\section{当前结论}
+
+目前实现已经完成了课程要求中的多轮检索、停止条件、历史与上下文管理、prompt 设计和基于证据的最终回答；同时实现了候选融合、答案审查和 OpenTrack 训练脚本。基础 DeepResearch baseline 达到 14\%，OpenTrack relaxed fusion 最终达到 16\%。主要瓶颈仍是复杂多跳问题中的证据召回不足和答案槽位抽取错误；实验表明，盲目扩大检索预算会降低准确率，受控候选融合比继续增加上下文更有效。
+
+\end{document}

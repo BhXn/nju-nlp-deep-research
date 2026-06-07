@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -58,11 +59,17 @@ def source_specs(args: argparse.Namespace) -> list[str]:
 
     existing_specs: list[str] = []
     missing: list[str] = []
+    source_run_dir = Path(__file__).resolve().parent / "source_runs"
     for spec in specs:
         label, path_text = spec.split("=", 1) if "=" in spec else (Path(spec).stem, spec)
         path = Path(path_text)
         if path.exists():
             existing_specs.append(f"{label}={path_text}")
+            continue
+
+        fallback = source_run_dir / path.name
+        if fallback.exists():
+            existing_specs.append(f"{label}={fallback}")
         else:
             missing.append(f"{label}={path_text}")
 
@@ -77,7 +84,21 @@ def source_specs(args: argparse.Namespace) -> list[str]:
 
 def run_command(command: list[str]) -> None:
     print("+ " + " ".join(command), flush=True)
-    subprocess.run(command, check=True)
+    script_dir = Path(__file__).resolve().parent
+    repo_root = script_dir.parent
+    module_paths = []
+    if (script_dir / "agent").exists():
+        module_paths.append(str(script_dir))
+    if (repo_root / "agent").exists():
+        module_paths.append(str(repo_root))
+
+    env = os.environ.copy()
+    existing_pythonpath = env.get("PYTHONPATH")
+    if existing_pythonpath:
+        module_paths.append(existing_pythonpath)
+    if module_paths:
+        env["PYTHONPATH"] = os.pathsep.join(module_paths)
+    subprocess.run(command, check=True, env=env)
 
 
 def main() -> None:
