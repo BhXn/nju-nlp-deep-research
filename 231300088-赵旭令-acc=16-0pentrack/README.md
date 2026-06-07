@@ -9,14 +9,15 @@
 - `opentrack/`：OpenTrack 代码与复现入口。入口为 `python opentrack/run.py`。
 - `opentrack/source_runs/`：OpenTrack 多轨迹融合所需的合法 source submission。
 - `opentrack/eval/`：OpenTrack 最终评测结果目录。
-- `report.tex`、`report.pdf`：实验报告。
+- `231300088-赵旭令-acc=16-opentrack.pdf`：实验报告 PDF。
+- `report.tex`、`report.pdf`：报告源文件和同内容 PDF 备份。
 
 ## 基础任务结果
 
 基础任务使用 `v6_docref` 版本：
 
 - submission：`eval/231300088-赵旭令-submission-acc14.jsonl`
-- eval：`eval/eval.txt`
+- eval：`eval/eval.txt`，基础指标摘要，包括 acc、正确数、平均工具调用数等
 - analysis：`eval/analysis.json`
 - accuracy：`7/50 = 14%`
 
@@ -30,7 +31,7 @@
 最终文件已放入 `opentrack/eval/`：
 
 - `231300088-赵旭令-opentrack-submission-acc16.jsonl`
-- `eval.txt`
+- `eval.txt`，OpenTrack 指标摘要
 - `analysis.json`
 
 ## 复现命令
