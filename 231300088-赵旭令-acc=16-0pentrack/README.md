@@ -4,7 +4,8 @@
 
 ## 目录结构
 
-- `core/agent/`：基础任务代码。入口为 `python -m agent.run_deep_research`。
+- `core/deepresearch.ipynb`：基础任务 notebook 入口，封装运行和评估命令。
+- `core/agent/`：基础任务代码。命令行入口为 `python -m agent.run_deep_research`。
 - `eval/`：基础任务评测结果。当前 baseline 为 `7/50 = 14%`。
 - `opentrack/`：OpenTrack 代码与复现入口。入口为 `python opentrack/run.py`。
 - `opentrack/source_runs/`：OpenTrack 多轨迹融合所需的合法 source submission。
