@@ -231,6 +231,19 @@ def add_candidate(candidates: Dict[str, Dict[str, Any]], answer: Any, source: st
     entry["sources"].append(source_marker)
 
 
+def source_status_weight(record: Dict[str, Any]) -> float:
+    status = str(record.get("status") or "").lower()
+    if status == "completed":
+        return 1.0
+    if status == "no_new_information":
+        return 0.85
+    if status == "max_tool_calls_reached":
+        return 0.55
+    if status:
+        return 0.7
+    return 1.0
+
+
 def extract_title_from_snippet(snippet: str) -> str:
     match = re.search(r"(?:^|\n)title:\s*(.+)", snippet or "", flags=re.IGNORECASE)
     if not match:
@@ -240,13 +253,23 @@ def extract_title_from_snippet(snippet: str) -> str:
     return compact(title, 160)
 
 
-def maybe_add_short_claim(candidates: Dict[str, Dict[str, Any]], claim: Any, source: str) -> None:
+def maybe_add_short_claim(
+    candidates: Dict[str, Dict[str, Any]],
+    claim: Any,
+    source: str,
+    weight_scale: float = 1.0,
+) -> None:
     text = compact(claim, 180)
     if len(text) <= 90 and not re.search(r"\b(the|this|that)\b.*\b(is|was|were|are)\b", text, re.IGNORECASE):
-        add_candidate(candidates, text, source, "short verify claim", weight=3)
+        add_candidate(candidates, text, source, "short verify claim", weight=max(1, round(3 * weight_scale)))
 
 
-def maybe_add_assistant_json_candidate(candidates: Dict[str, Dict[str, Any]], content: str, source: str) -> None:
+def maybe_add_assistant_json_candidate(
+    candidates: Dict[str, Dict[str, Any]],
+    content: str,
+    source: str,
+    weight_scale: float = 1.0,
+) -> None:
     parsed = _extract_json_value(content)
     if not isinstance(parsed, dict):
         return
@@ -263,7 +286,7 @@ def maybe_add_assistant_json_candidate(candidates: Dict[str, Dict[str, Any]], co
         weight += 2
     elif confidence >= 50:
         weight += 1
-    add_candidate(candidates, answer, source, f"{reason} confidence={confidence}", weight=weight)
+    add_candidate(candidates, answer, source, f"{reason} confidence={confidence}", weight=max(1, round(weight * weight_scale)))
 
 
 def extract_from_submission(
@@ -275,19 +298,23 @@ def extract_from_submission(
     candidates: Dict[str, Dict[str, Any]] = {}
     evidence_docs: Dict[str, Dict[str, Any]] = {}
     verifier_notes: List[str] = []
+    weight_scale = source_status_weight(record)
+
+    def scaled(weight: int) -> int:
+        return max(1, round(weight * weight_scale))
 
     predicted = record.get("predicted_answer")
-    add_candidate(candidates, predicted, label, "run predicted answer", weight=6)
+    add_candidate(candidates, predicted, label, "run predicted answer", weight=scaled(6))
 
     for message in record.get("messages") or []:
         if message.get("role") == "assistant" and message.get("content"):
             content = str(message.get("content") or "")
             if re.search(r"\b(?:Exact Answer|Final Answer|Answer)\s*:", content, flags=re.IGNORECASE):
-                add_candidate(candidates, content, label, "assistant exact answer", weight=4)
+                add_candidate(candidates, content, label, "assistant exact answer", weight=scaled(4))
 
     for message in record.get("messages") or []:
         if message.get("role") == "assistant" and message.get("content"):
-            maybe_add_assistant_json_candidate(candidates, str(message.get("content") or ""), label)
+            maybe_add_assistant_json_candidate(candidates, str(message.get("content") or ""), label, weight_scale)
 
     call_names = parse_tool_call_names(record.get("messages") or [])
     for message in record.get("messages") or []:
@@ -324,7 +351,7 @@ def extract_from_submission(
                     doc["snippets"].append(compact(snippet, snippet_chars))
                     title = extract_title_from_snippet(snippet)
                     if title:
-                        add_candidate(candidates, title, label, f"retrieved title docid={docid}", weight=1)
+                        add_candidate(candidates, title, label, f"retrieved title docid={docid}", weight=scaled(1))
 
         elif tool_name in {"open_doc", "get_document"} and isinstance(payload, dict):
             docid = str(payload.get("docid") or "")
@@ -344,6 +371,9 @@ def extract_from_submission(
                     doc["sources"].append(label)
                 if payload.get("text"):
                     doc["snippets"].append(compact(payload.get("text"), snippet_chars))
+                for window in payload.get("matches") or []:
+                    if isinstance(window, dict) and window.get("text"):
+                        doc["snippets"].append(compact(window.get("text"), snippet_chars))
 
         elif tool_name == "find_in_doc" and isinstance(payload, dict):
             docid = str(payload.get("docid") or "")
@@ -366,7 +396,7 @@ def extract_from_submission(
 
         elif tool_name == "verify_claim" and isinstance(payload, dict):
             claim = payload.get("claim") or arguments.get("claim")
-            maybe_add_short_claim(candidates, claim, label)
+            maybe_add_short_claim(candidates, claim, label, weight_scale)
             note_bits = [f"[{label}] claim={compact(claim, 160)}"]
             if "supported_likely" in payload:
                 note_bits.append(f"lexical_supported={payload.get('supported_likely')}")

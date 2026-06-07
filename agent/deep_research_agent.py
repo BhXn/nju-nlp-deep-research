@@ -16,7 +16,7 @@ You must answer using only the local BrowseComp-Plus tools and evidence returned
 Workflow:
 1. Decompose the question into searchable clues.
 2. Search with distinctive names, titles, dates, quoted phrases, and short clue combinations.
-3. Open promising documents or find keywords inside them when snippets are not enough.
+3. Retrieve promising documents with get_document when snippets are not enough.
 4. Keep track of confirmed facts, unresolved subgoals, and repeated searches.
 5. Stop only when the answer is supported by evidence, when no new evidence is appearing, or when the round limit is reached.
 
@@ -342,6 +342,7 @@ class ResearchConfig:
     auto_open_top_docs: int = 0
     auto_find_top_docs: int = 0
     auto_find_terms_per_doc: int = 0
+    auto_find_max_calls: int = 0
     max_tool_calls_per_round: int = 4
     max_total_tool_calls: int = 36
     max_no_new_info_rounds: int = 2
@@ -454,6 +455,9 @@ class EvidenceStore:
                     doc["opened_text"] = result["text"]
                 if result.get("url"):
                     doc["url"] = result["url"]
+                for window in result.get("matches", []) or []:
+                    if isinstance(window, dict) and window not in doc["windows"]:
+                        doc["windows"].append(window)
         elif tool_name == "find_in_doc" and isinstance(result, dict):
             docid = str(result.get("docid", ""))
             if docid:
@@ -879,20 +883,24 @@ class DeepResearchAgent:
 
         if self.config.auto_open_top_docs > 0:
             for docid in state.top_docids(limit=self.config.auto_open_top_docs):
-                result = self.tool_registry["open_doc"](docid=docid, max_chars=self.config.doc_max_chars)
+                result = self.tool_registry["get_document"](docid=docid, max_chars=self.config.doc_max_chars)
                 self._record_manual_tool_call(
                     messages=messages,
                     state=state,
-                    tool_name="open_doc",
+                    tool_name="get_document",
                     arguments={"docid": docid, "max_chars": self.config.doc_max_chars},
                     result=result,
                     content="Opening a high-ranked document for evidence.",
                 )
         if self.config.auto_find_top_docs > 0 and self.config.auto_find_terms_per_doc > 0:
             terms = self._auto_find_terms(question, state, limit=self.config.auto_find_terms_per_doc)
+            max_calls = self._auto_find_budget(messages)
+            used_calls = 0
             for docid in state.top_docids(limit=self.config.auto_find_top_docs):
                 for term in terms:
-                    result = self.tool_registry["find_in_doc"](
+                    if used_calls >= max_calls:
+                        break
+                    result = self.tool_registry["get_document"](
                         docid=docid,
                         keyword=term,
                         max_windows=2,
@@ -901,7 +909,7 @@ class DeepResearchAgent:
                     self._record_manual_tool_call(
                         messages=messages,
                         state=state,
-                        tool_name="find_in_doc",
+                        tool_name="get_document",
                         arguments={
                             "docid": docid,
                             "keyword": term,
@@ -911,7 +919,21 @@ class DeepResearchAgent:
                         result=result,
                         content="Locating planned key terms inside a high-ranked document.",
                     )
+                    used_calls += 1
+                if used_calls >= max_calls:
+                    break
         state.no_new_info_rounds = 0
+
+    def _auto_find_budget(self, messages: List[Dict[str, Any]]) -> int:
+        requested = self.config.auto_find_top_docs * self.config.auto_find_terms_per_doc
+        if requested <= 0:
+            return 0
+        explicit_cap = self.config.auto_find_max_calls or requested
+        reserved_for_react = max(0, self.config.max_rounds * max(1, self.config.max_tool_calls_per_round // 2))
+        reserved_for_final_checks = max(2, self.config.verification_rounds + 2)
+        already_used = self._count_tool_calls(messages)
+        budget_left = self.config.max_total_tool_calls - already_used - reserved_for_react - reserved_for_final_checks
+        return max(0, min(requested, explicit_cap, budget_left))
 
     def _auto_find_terms(self, question: str, state: EvidenceStore, limit: int) -> List[str]:
         terms: List[str] = []
@@ -998,8 +1020,8 @@ class DeepResearchAgent:
         )
         if not self.config.use_react_verify_tool:
             instruction += (
-                " The lexical verify_claim tool is disabled during research rounds; use search, open_doc, "
-                "and find_in_doc to gather stronger evidence before answering."
+                " The lexical verify_claim tool is disabled during research rounds; use search and get_document "
+                "to gather stronger evidence before answering."
             )
         return [
             {"role": "system", "content": RESEARCH_SYSTEM_PROMPT},
@@ -1305,14 +1327,12 @@ class DeepResearchAgent:
         function = tool_call.get("function") or {}
         tool_name = str(function.get("name") or "").strip()
         arguments = _parse_tool_arguments(function.get("arguments"))
-        if tool_name == "get_document":
-            tool_name = "open_doc"
         if tool_name not in self.tool_registry:
             return tool_name, arguments, {"error": f"unknown tool: {tool_name}"}
         if tool_name == "verify_claim" and not self.config.use_react_verify_tool:
             return tool_name, arguments, {
                 "skipped": "react_verify_tool_disabled",
-                "reason": "Use search, open_doc, or find_in_doc during research rounds.",
+                "reason": "Use search or get_document during research rounds.",
             }
         if tool_name == "verify_claim" and self.config.max_react_verify_repeats > 0:
             claim = arguments.get("claim", "")
@@ -1328,7 +1348,7 @@ class DeepResearchAgent:
 
         call_arguments = dict(arguments)
         recorded_arguments = dict(arguments)
-        if tool_name in {"open_doc", "find_in_doc"} and call_arguments.get("docid") is not None:
+        if tool_name in {"open_doc", "find_in_doc", "get_document"} and call_arguments.get("docid") is not None:
             original_docid = call_arguments.get("docid")
             resolved_docid = state.resolve_doc_reference(original_docid)
             call_arguments["docid"] = resolved_docid

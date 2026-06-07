@@ -522,6 +522,22 @@ def get_deep_research_tool_specs_and_registry(
             "match_count": len(matches),
         }
 
+    def get_document(
+        docid: str,
+        max_chars: Optional[int] = None,
+        keyword: Optional[str] = None,
+        max_windows: Optional[int] = None,
+        window_size: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        if keyword:
+            return find_in_doc(
+                docid=docid,
+                keyword=keyword,
+                max_windows=max_windows,
+                window_size=window_size,
+            )
+        return open_doc(docid=docid, max_chars=max_chars)
+
     def decompose_question(question: str, max_subquestions: Optional[int] = None) -> Dict[str, Any]:
         limit = _clamp_int(max_subquestions, default=8, minimum=2, maximum=12)
         return decompose_question_heuristic(question, max_subquestions=limit)
@@ -609,8 +625,11 @@ def get_deep_research_tool_specs_and_registry(
         {
             "type": "function",
             "function": {
-                "name": "open_doc",
-                "description": "Open a retrieved document by docid and return a truncated full-text view.",
+                "name": "get_document",
+                "description": (
+                    "Retrieve a document by docid. Without keyword, returns a truncated full-text view. "
+                    "With keyword, returns focused windows around matches in that document."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -619,20 +638,6 @@ def get_deep_research_tool_specs_and_registry(
                             "type": "integer",
                             "description": f"Maximum characters to return, capped at {doc_max_chars}.",
                         },
-                    },
-                    "required": ["docid"],
-                },
-            },
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "find_in_doc",
-                "description": "Find keyword windows inside a retrieved document.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "docid": {"type": "string", "description": "Document id."},
                         "keyword": {"type": "string", "description": "Keyword or phrase to locate."},
                         "max_windows": {"type": "integer", "description": "Maximum windows to return."},
                         "window_size": {"type": "integer", "description": "Approximate characters per window."},
@@ -688,7 +693,7 @@ def get_deep_research_tool_specs_and_registry(
     return tools, {
         "search": search,
         "open_doc": open_doc,
-        "get_document": open_doc,
+        "get_document": get_document,
         "find_in_doc": find_in_doc,
         "decompose_question": decompose_question,
         "verify_claim": verify_claim,

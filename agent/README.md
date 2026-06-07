@@ -172,7 +172,7 @@ python -m agent.eval \
 - `--max-initial-queries`：规划阶段生成并执行的初始检索数
 - `--top-k`：每次 BM25 检索返回文档数
 - `--auto-open-top-docs`：初始检索后自动打开若干高分文档
-- `--auto-find-top-docs` / `--auto-find-terms-per-doc`：初始检索后在高分文档内自动定位关键约束窗口
+- `--auto-find-top-docs` / `--auto-find-terms-per-doc` / `--auto-find-max-calls`：初始检索后在高分文档内用 `get_document(keyword=...)` 定位关键约束窗口
 - `--max-tool-calls-per-round` / `--max-total-tool-calls` / `--max-no-new-info-rounds`：停止条件和工具调用预算
 - `--max-context-chars` / `--max-evidence-docs`：压缩后证据上下文预算
 - `--snippet-max-chars` / `--doc-max-chars`：搜索摘要与打开文档的字符预算
@@ -184,7 +184,8 @@ python -m agent.eval \
 - `--answer-audit-min-confidence`：审查结果覆盖原答案所需最低置信度，默认 `70`
 - `--enable-thinking`：允许 Qwen thinking 输出；默认关闭以提高工具调用格式稳定性
 - `--no-model-planner` / `--no-model-verifier`：关闭规划或验证 LLM 子 agent，用确定性 fallback
-- `--overnight`：本地语料内的高预算预设，适合长时间无人值守运行
+- `--overnight`：本地语料内的 balanced 长运行预设，会保留 ReAct 和验证预算
+- `--wide-overnight`：更激进的宽召回预设，仅建议作为消融项；它可能引入较多噪声证据
 
 answer-type 审查消融示例：
 
@@ -199,7 +200,7 @@ python -m agent.run_deep_research \
   --output runs/deep_research_submission_v10_answer_audit.jsonl
 ```
 
-高预算 overnight 消融示例：
+balanced overnight 消融示例：
 
 ```bash
 python -m agent.run_deep_research \
@@ -210,6 +211,8 @@ python -m agent.run_deep_research \
   --overnight \
   --output runs/deep_research_submission_v11_overnight.jsonl
 ```
+
+如果需要复现旧的激进宽召回消融，可以把 `--overnight` 换成 `--wide-overnight`。当前实验中宽召回会显著增加噪声证据，因此不建议作为最终主版本。
 
 多轨迹候选融合示例：
 

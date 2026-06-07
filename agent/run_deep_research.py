@@ -23,8 +23,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-initial-queries", type=int, default=7, help="Initial planned searches per question.")
     parser.add_argument("--top-k", type=int, default=8, help="BM25 results per search.")
     parser.add_argument("--auto-open-top-docs", type=int, default=0, help="Open top documents after initial search.")
-    parser.add_argument("--auto-find-top-docs", type=int, default=0, help="Run find_in_doc on this many top documents after initial search.")
+    parser.add_argument("--auto-find-top-docs", type=int, default=0, help="Run keyword-focused get_document on this many top documents after initial search.")
     parser.add_argument("--auto-find-terms-per-doc", type=int, default=0, help="Number of planned key terms to locate inside each auto-find document.")
+    parser.add_argument("--auto-find-max-calls", type=int, default=0, help="Global cap for automatic keyword-window document calls.")
     parser.add_argument("--max-tool-calls-per-round", type=int, default=4, help="Maximum tool calls accepted per ReAct round.")
     parser.add_argument("--max-total-tool-calls", type=int, default=36, help="Maximum total tool calls per query.")
     parser.add_argument("--max-no-new-info-rounds", type=int, default=2, help="Stop after this many no-new-info rounds.")
@@ -95,19 +96,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--overnight",
         action="store_true",
-        help="Use a high-budget local-only preset intended for long unattended runs.",
+        help="Use a balanced long-run local-only preset intended for unattended runs.",
+    )
+    parser.add_argument(
+        "--wide-overnight",
+        action="store_true",
+        help="Use the older aggressive high-recall preset. This is mainly for ablation because it can add noisy evidence.",
     )
     return parser.parse_args()
 
 
 def build_config(args: argparse.Namespace) -> ResearchConfig:
-    if args.overnight:
+    if args.wide_overnight:
         args.max_rounds = max(args.max_rounds, 10)
         args.max_initial_queries = max(args.max_initial_queries, 28)
         args.top_k = max(args.top_k, 12)
         args.auto_open_top_docs = max(args.auto_open_top_docs, 6)
         args.auto_find_top_docs = max(args.auto_find_top_docs, 8)
         args.auto_find_terms_per_doc = max(args.auto_find_terms_per_doc, 10)
+        args.auto_find_max_calls = max(args.auto_find_max_calls, 80)
         args.max_tool_calls_per_round = max(args.max_tool_calls_per_round, 6)
         args.max_total_tool_calls = max(args.max_total_tool_calls, 120)
         args.max_no_new_info_rounds = max(args.max_no_new_info_rounds, 4)
@@ -119,6 +126,27 @@ def build_config(args: argparse.Namespace) -> ResearchConfig:
         args.answer_audit = True
         args.query_focused_snippet = True
         args.prefer_heuristic_queries = True
+    elif args.overnight:
+        args.max_rounds = max(args.max_rounds, 8)
+        args.max_initial_queries = max(args.max_initial_queries, 16)
+        args.top_k = max(args.top_k, 10)
+        args.auto_open_top_docs = max(args.auto_open_top_docs, 4)
+        args.auto_find_top_docs = max(args.auto_find_top_docs, 4)
+        args.auto_find_terms_per_doc = max(args.auto_find_terms_per_doc, 4)
+        args.auto_find_max_calls = max(args.auto_find_max_calls, 12)
+        args.max_tool_calls_per_round = max(args.max_tool_calls_per_round, 5)
+        args.max_total_tool_calls = max(args.max_total_tool_calls, 72)
+        args.max_no_new_info_rounds = max(args.max_no_new_info_rounds, 3)
+        args.max_context_chars = max(args.max_context_chars, 32000)
+        args.snippet_max_chars = max(args.snippet_max_chars, 1200)
+        args.doc_max_chars = max(args.doc_max_chars, 7000)
+        args.max_evidence_docs = max(args.max_evidence_docs, 40)
+        args.answer_ensemble_size = max(args.answer_ensemble_size, 3)
+        args.answer_selector_min_confidence = max(args.answer_selector_min_confidence, 72)
+        args.answer_audit = True
+        args.answer_audit_min_confidence = max(args.answer_audit_min_confidence, 80)
+        args.query_focused_snippet = True
+        args.prefer_heuristic_queries = True
 
     return ResearchConfig(
         max_rounds=args.max_rounds,
@@ -127,6 +155,7 @@ def build_config(args: argparse.Namespace) -> ResearchConfig:
         auto_open_top_docs=args.auto_open_top_docs,
         auto_find_top_docs=args.auto_find_top_docs,
         auto_find_terms_per_doc=args.auto_find_terms_per_doc,
+        auto_find_max_calls=args.auto_find_max_calls,
         max_tool_calls_per_round=args.max_tool_calls_per_round,
         max_total_tool_calls=args.max_total_tool_calls,
         max_no_new_info_rounds=args.max_no_new_info_rounds,
