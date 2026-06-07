@@ -27,19 +27,11 @@
 - accuracy：`8/50 = 16%`
 - correct query ids：`5, 53, 159, 314, 380, 651, 1082, 1095`
 
-需要放入 `opentrack/eval/` 的最终文件名如下：
+最终文件已放入 `opentrack/eval/`：
 
 - `231300088-赵旭令-opentrack-submission-acc16.jsonl`
 - `eval.txt`
 - `analysis.json`
-
-目前本地没有下载到这组三个 `fused_v6_relaxed` 文件，因此 `opentrack/eval/` 中保留了占位说明。请从服务器复制：
-
-- `runs/deep_research_submission_fused_v6_relaxed.jsonl`
-- `runs/deep_research_eval_fused_v6_relaxed.jsonl`
-- `runs/deep_research_analysis_fused_v6_relaxed.json`
-
-并分别重命名为上面的三个文件。
 
 ## 复现命令
 
